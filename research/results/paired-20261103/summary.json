@@ -1,0 +1,197 @@
+{
+  "config": {
+    "students": 30,
+    "labs": 10,
+    "weeks": 30,
+    "capacity": 20,
+    "points": 5
+  },
+  "runs": 10000,
+  "seed": 20261103,
+  "python": "3.14.8",
+  "std_convention": "population (ddof=0)",
+  "source_sha256": "5e69ec4a9dbce7a2303fdb0333eeb0648cbc3130e0fd2d48b2a7c4991cec607d",
+  "paired_difference_vs_fifo": {
+    "deadline": {
+      "mean_difference": -1.2358,
+      "mc_95_interval": [
+        -1.3359420159788788,
+        -1.1356579840211212
+      ]
+    },
+    "chance_5": {
+      "mean_difference": -1.3585,
+      "mc_95_interval": [
+        -1.39710436662027,
+        -1.31989563337973
+      ]
+    },
+    "score": {
+      "mean_difference": -0.8166,
+      "mc_95_interval": [
+        -0.8559914573982988,
+        -0.7772085426017011
+      ]
+    },
+    "random": {
+      "mean_difference": -0.2648,
+      "mc_95_interval": [
+        -0.2963598968360549,
+        -0.23324010316394506
+      ]
+    },
+    "chance_4": {
+      "mean_difference": 0.0648,
+      "mc_95_interval": [
+        0.02939756429228345,
+        0.10020243570771654
+      ]
+    }
+  },
+  "policies": {
+    "deadline": {
+      "pooled": {
+        "mean": 29.342663333333334,
+        "median": 35.0,
+        "std": 19.096827620663127
+      },
+      "mean_of_runs": {
+        "mean": 29.342663333333384,
+        "median": 37.28425,
+        "std": 16.871325437418722
+      },
+      "totals": {
+        "attempts": 5866596,
+        "failed_attempts": 3535341,
+        "capacity_misses": 2765511,
+        "failed_opportunities": 6300852,
+        "grade_2": 117010,
+        "grade_3": 25772,
+        "grade_4": 50862,
+        "grade_5": 106356
+      },
+      "four_five_per_group": 15.7218,
+      "four_five_percent": 52.406
+    },
+    "chance_5": {
+      "pooled": {
+        "mean": 28.296556666666667,
+        "median": 42.0,
+        "std": 22.508302264056304
+      },
+      "mean_of_runs": {
+        "mean": 28.296556666666678,
+        "median": 36.40195,
+        "std": 22.247229095584625
+      },
+      "totals": {
+        "attempts": 5405291,
+        "failed_attempts": 3094010,
+        "capacity_misses": 1280467,
+        "failed_opportunities": 4374477,
+        "grade_2": 134718,
+        "grade_3": 9291,
+        "grade_4": 7863,
+        "grade_5": 148128
+      },
+      "four_five_per_group": 15.5991,
+      "four_five_percent": 51.997
+    },
+    "score": {
+      "pooled": {
+        "mean": 28.905136666666667,
+        "median": 44.0,
+        "std": 22.40155882108778
+      },
+      "mean_of_runs": {
+        "mean": 28.90513666666663,
+        "median": 38.9899,
+        "std": 22.17795522038711
+      },
+      "totals": {
+        "attempts": 5367027,
+        "failed_attempts": 3056490,
+        "capacity_misses": 1277523,
+        "failed_opportunities": 4334013,
+        "grade_2": 128801,
+        "grade_3": 9789,
+        "grade_4": 13282,
+        "grade_5": 148128
+      },
+      "four_five_per_group": 16.141,
+      "four_five_percent": 53.803333333333335
+    },
+    "random": {
+      "pooled": {
+        "mean": 29.729646666666667,
+        "median": 41.0,
+        "std": 21.315743690407697
+      },
+      "mean_of_runs": {
+        "mean": 29.72964666666675,
+        "median": 37.4705,
+        "std": 20.891941254596635
+      },
+      "totals": {
+        "attempts": 5546389,
+        "failed_attempts": 3210344,
+        "capacity_misses": 1695229,
+        "failed_opportunities": 4905573,
+        "grade_2": 121330,
+        "grade_3": 11742,
+        "grade_4": 26228,
+        "grade_5": 140700
+      },
+      "four_five_per_group": 16.6928,
+      "four_five_percent": 55.64266666666666
+    },
+    "fifo": {
+      "pooled": {
+        "mean": 30.224223333333335,
+        "median": 44.0,
+        "std": 21.477094478306935
+      },
+      "mean_of_runs": {
+        "mean": 30.22422333333338,
+        "median": 39.0425,
+        "std": 21.048062654944687
+      },
+      "totals": {
+        "attempts": 5539688,
+        "failed_attempts": 3202490,
+        "capacity_misses": 1732704,
+        "failed_opportunities": 4935194,
+        "grade_2": 119791,
+        "grade_3": 10633,
+        "grade_4": 21789,
+        "grade_5": 147787
+      },
+      "four_five_per_group": 16.9576,
+      "four_five_percent": 56.525333333333336
+    },
+    "chance_4": {
+      "pooled": {
+        "mean": 29.077846666666666,
+        "median": 43.0,
+        "std": 22.368550688332242
+      },
+      "mean_of_runs": {
+        "mean": 29.077846666666726,
+        "median": 39.08535,
+        "std": 22.062410483602026
+      },
+      "totals": {
+        "attempts": 5567925,
+        "failed_attempts": 3233931,
+        "capacity_misses": 1907182,
+        "failed_opportunities": 5141113,
+        "grade_2": 124234,
+        "grade_3": 5542,
+        "grade_4": 24483,
+        "grade_5": 145741
+      },
+      "four_five_per_group": 17.0224,
+      "four_five_percent": 56.74133333333333
+    }
+  }
+}

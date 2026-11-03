@@ -1,0 +1,32 @@
+{
+  "А. М. Кутыев": {
+    "runs": 10000,
+    "students": 300000,
+    "original_std_ddof": 1,
+    "mean": 29.423123333333333,
+    "median": 35.0,
+    "population_std": 19.086587524003747,
+    "four_five_per_group": 15.8121,
+    "verification": "passed"
+  },
+  "Е. И. Волжанин": {
+    "runs": 10000,
+    "students": 300000,
+    "original_std_ddof": 0,
+    "mean": 29.787406666666666,
+    "median": 42.0,
+    "population_std": 21.320823406737574,
+    "four_five_per_group": 16.7586,
+    "verification": "passed"
+  },
+  "Н. А. Щепоткин": {
+    "runs": 10000,
+    "students": 300000,
+    "original_std_ddof": 0,
+    "mean": 28.346243333333334,
+    "median": 43.0,
+    "population_std": 22.52180600116523,
+    "four_five_per_group": 15.6419,
+    "verification": "passed"
+  }
+}
