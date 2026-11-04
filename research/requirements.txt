@@ -1,4 +1,0 @@
-# Tested with Python 3.12.14. The paired experiment itself needs no packages.
-numpy==2.4.4
-pandas==3.0.2
-matplotlib==3.10.9

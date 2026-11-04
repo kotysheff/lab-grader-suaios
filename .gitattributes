@@ -1,3 +1,0 @@
-# Preserve authors' original bytes and exported data across platforms.
-research/originals/*.py -text whitespace=cr-at-eol,-blank-at-eol
-research/results/** -text whitespace=cr-at-eol
