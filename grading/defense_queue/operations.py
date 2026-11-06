@@ -19,9 +19,10 @@ def effective_course(store, course_id, course):
     with store.connection() as con:
         settings = con.execute('SELECT * FROM queue_settings WHERE course_id=?', (course_id,)).fetchone()
     if settings:
-        result['queue']['random'] = bool(settings['random_override'])
+        if settings['policy_override_set']:
+            result['queue']['random'] = bool(settings['random_override'])
+            result['queue']['deadlines'] = json.loads(settings['deadlines_json'])
         result['queue']['schedule'] = dict(result['queue'].get('schedule', {}), **json.loads(settings['schedule_json']))
-        result['queue']['deadlines'] = dict(result['queue'].get('deadlines', {}), **json.loads(settings['deadlines_json']))
     return result
 
 
@@ -29,9 +30,9 @@ def save_settings(store, course_id, *, random, deadlines, now):
     if type(random) is not bool or not isinstance(deadlines, dict):
         raise ValueError('Нужны режим очереди и словарь дедлайнов')
     with store.transaction() as con:
-        con.execute('''INSERT INTO queue_settings(course_id,random_override,deadlines_json,updated_at)
-            VALUES (?,?,?,?) ON CONFLICT(course_id) DO UPDATE SET
-            random_override=excluded.random_override,deadlines_json=excluded.deadlines_json,updated_at=excluded.updated_at''',
+        con.execute('''INSERT INTO queue_settings(course_id,random_override,deadlines_json,updated_at,policy_override_set)
+            VALUES (?,?,?,?,1) ON CONFLICT(course_id) DO UPDATE SET
+            random_override=excluded.random_override,deadlines_json=excluded.deadlines_json,updated_at=excluded.updated_at,policy_override_set=1''',
             (course_id, int(random), json.dumps(deadlines), now))
 
 
@@ -56,7 +57,8 @@ def materialize(store, view, course, *, now):
             if not row['will_attend']:
                 continue
             candidate = con.execute('SELECT * FROM queue_candidates WHERE candidate_id=?', (row['candidate_id'],)).fetchone()
-            if con.execute("SELECT 1 FROM queue_entries WHERE candidate_id=? AND session_id=?", (candidate['candidate_id'], session['session_id'])).fetchone():
+            initial_key = f"initial:{session['session_id']}:{session['schedule_revision']}:{row['candidate_id']}"
+            if con.execute("SELECT 1 FROM queue_entries WHERE candidate_id=? AND session_id=? AND (status!='expired' OR request_key=?)", (candidate['candidate_id'], session['session_id'], initial_key)).fetchone():
                 continue
             if con.execute("SELECT 1 FROM queue_entries WHERE course_id=? AND student_id=? AND session_id!=? AND status IN ('waiting','called')", (session['course_id'], candidate['student_id'], session['session_id'])).fetchone():
                 continue
@@ -66,7 +68,7 @@ def materialize(store, view, course, *, now):
                                     datetime.fromtimestamp(session['starts_at'], timezone.utc),
                                     week_anchor=date.fromisoformat(course.get('queue', {}).get('semester_week_anchor', '1970-01-05')),
                                     timezone=course_timezone(course))
-            _insert_attempt(con, candidate, session, request_key=f"initial:{session['session_id']}:{session['schedule_revision']}:{row['candidate_id']}", repeat=False, rank=rank, now=now)
+            _insert_attempt(con, candidate, session, request_key=initial_key, repeat=False, rank=rank, now=now)
         con.execute('''INSERT INTO queue_reconciliations(session_id,due_at) VALUES (?,?)
             ON CONFLICT(session_id) DO UPDATE SET due_at=excluded.due_at WHERE queue_reconciliations.done_at IS NULL''',
             (session['session_id'], session['ends_at'] + 600))
@@ -79,7 +81,7 @@ def teacher_view(store, course_id, group_id, course, *, deadlines_available, now
     materialize(store, view, course, now=now)
     with store.connection() as con:
         attempts = [dict(row) for row in con.execute('SELECT * FROM queue_entries WHERE session_id=? ORDER BY entry_id', (session_id,))]
-        events = [dict(row) for row in con.execute('SELECT * FROM queue_events WHERE session_id=? ORDER BY event_id DESC LIMIT 200', (session_id,))]
+        events = [dict(row) for row in con.execute('SELECT e.*,s.full_name,c.lab_key FROM queue_events e LEFT JOIN queue_candidates c USING(candidate_id) LEFT JOIN students s ON s.student_id=c.student_id WHERE e.session_id=? ORDER BY e.event_id DESC LIMIT 200', (session_id,))]
         sync = con.execute('SELECT * FROM queue_reconciliations WHERE session_id=?', (session_id,)).fetchone()
     latest = {row['candidate_id']: row for row in attempts}
     known = {row['candidate_id'] for row in view['entries']}
@@ -212,3 +214,12 @@ def save_schedule(store, course_id, group_id, config, *, now):
         configs = json.loads(row[0]) if row else {}
         configs[group_id] = config
         con.execute("INSERT INTO queue_settings(course_id,schedule_json,updated_at) VALUES (?,?,?) ON CONFLICT(course_id) DO UPDATE SET schedule_json=excluded.schedule_json,updated_at=excluded.updated_at", (course_id, json.dumps(configs, ensure_ascii=False), now))
+
+
+def set_enrollment(store, session_id, *, closed, now, actor):
+    with store.transaction() as con:
+        session = con.execute('SELECT * FROM sessions WHERE session_id=?', (session_id,)).fetchone()
+        if not session or session['enrollment_status'] == 'cancelled' or now >= session['starts_at']:
+            raise QueueClosed('Посещение можно менять только до начала неотменённого занятия')
+        con.execute('UPDATE sessions SET enrollment_status=? WHERE session_id=?', ('closed' if closed else 'scheduled',session_id))
+        _event(con,session_id,'enrollment_closed' if closed else 'enrollment_opened',now,actor=actor)

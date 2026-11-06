@@ -1190,6 +1190,8 @@ def grade_lab(request: Request, course_id: str, group_id: str, lab_id: str, grad
 def _sync_defense_queue(course_id, group_id, course, *, sheet=None, force=False):
     from grading.defense_queue.runtime import sync_queue
     from grading.sheets_client import parse_deadline
+    if course.get('queue', {}).get('enabled'):
+        _ensure_queue_worker()
     public_course = dict(course)
     public_course['labs'] = {key: lab for key, lab in course.get('labs', {}).items()
                              if find_visible_lab_config(course, str(key))}
@@ -1403,7 +1405,9 @@ def teacher_queue_action(request: Request, course_id: str, group_id: str, data: 
                                now=now, session_id=data.session_id)
         if data.entry_id is not None and data.entry_id not in {row['entry_id'] for row in view['attempts']}:
             raise ValueError('Попытка не относится к выбранному занятию')
-        if data.action == 'call_next':
+        if data.action in ('close_enrollment', 'open_enrollment'):
+            op.set_enrollment(store, data.session_id, closed=data.action == 'close_enrollment', now=now, actor=admin)
+        elif data.action == 'call_next':
             op.call_next(store, data.session_id, now=now, actor=admin)
         elif data.action == 'result' and data.entry_id is not None:
             old = next(row for row in view['attempts'] if row['entry_id'] == data.entry_id)
@@ -1543,20 +1547,23 @@ def refresh_queue_schedule(request: Request, course_id: str, group_id: str,
 
 
 _queue_worker = None
+_queue_worker_lock = threading.Lock()
 
-@app.on_event('startup')
-def start_defense_queue_worker():
+def _ensure_queue_worker():
     global _queue_worker
     if os.getenv('QUEUE_WORKER_ENABLED', '1') == '0':
         return
     from grading.defense_queue.runtime import queue_store
     from grading.defense_queue.worker import QueueWorker
-    # База создаётся только при включении функции хотя бы у одного курса.
-    if not any(course.get('queue', {}).get('enabled') for _, course in iter_course_configs()):
-        return
-    _queue_worker = QueueWorker(queue_store(), iter_course_configs, _sync_defense_queue, _fetch_queue_schedule)
-    _queue_worker.start()
+    with _queue_worker_lock:
+        if _queue_worker is None:
+            _queue_worker = QueueWorker(queue_store(), iter_course_configs, _sync_defense_queue, _fetch_queue_schedule)
+            _queue_worker.start()
 
+@app.on_event('startup')
+def start_defense_queue_worker():
+    if any(course.get('queue', {}).get('enabled') for _, course in iter_course_configs()):
+        _ensure_queue_worker()
 
 @app.on_event('shutdown')
 def stop_defense_queue_worker():

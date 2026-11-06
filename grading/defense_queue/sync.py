@@ -69,6 +69,10 @@ def sync_group(store, course_id, group_id, course, grid, *, parse_deadline, now)
                 for candidate in previous:
                     con.execute("UPDATE queue_candidates SET status='defended' WHERE candidate_id=?", (candidate[0],))
                     store.event(con, candidate[0], 'sheet_defended', now)
+                if not con.execute("SELECT 1 FROM queue_candidates WHERE course_id=? AND student_id=? AND lab_key=? AND status='defended'", (course_id,student_id,key)).fetchone():
+                    deadline = deadlines[key]
+                    cursor = con.execute("INSERT INTO queue_candidates(course_id,group_id,student_id,lab_key,lab_order,deadline_at,deadline_available,qualified_at,status) VALUES (?,?,?,?,?,?,?,?,'defended')", (course_id,group_id,student_id,key,order.index(key)+1,int(deadline.value.timestamp()) if deadline.value else None,int(deadline.available),now))
+                    store.event(con,cursor.lastrowid,'sheet_defended',now)
             defended = frozenset(row[0] for row in con.execute("SELECT lab_key FROM queue_candidates WHERE course_id=? AND student_id=? AND status='defended'", (course_id, student_id)))
             key = first_admitted_lab(order, cells, defended_in_history=defended)
             old = con.execute("SELECT candidate_id,lab_key,group_id FROM queue_candidates WHERE course_id=? AND student_id=? AND status='eligible'", (course_id, student_id)).fetchone()
@@ -81,5 +85,10 @@ def sync_group(store, course_id, group_id, course, grid, *, parse_deadline, now)
                           deadline_at=int(deadline.value.timestamp()) if deadline.value else None,
                           deadline_available=deadline.available, now=now)
             imported += 1
+    with store.transaction() as con:
+        for row in con.execute("SELECT c.candidate_id,s.github_login FROM queue_candidates c JOIN students s USING(student_id) WHERE c.course_id=? AND c.group_id=? AND c.status='eligible'", (course_id,group_id)).fetchall():
+            if row['github_login'].lower() not in logins:
+                con.execute("UPDATE queue_candidates SET status='inactive' WHERE candidate_id=?", (row['candidate_id'],))
+                store.event(con,row['candidate_id'],'eligibility_changed',now)
     return {'students': len(students), 'eligible': imported, 'deadlines_available': all(d.available for d in deadlines.values()),
             'deadlines': {key: {'available': d.available, 'value': int(d.value.timestamp()) if d.value else None} for key, d in deadlines.items()}}

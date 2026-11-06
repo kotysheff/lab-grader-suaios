@@ -76,6 +76,19 @@ class SyncTests(unittest.TestCase):
             self.sync()
         self.assertEqual(self.rows(), [])
 
+    def test_initial_defended_marks_remain_in_history(self):
+        self.grid[2][3]='vv'
+        self.sync()
+        self.grid[2][3]=''
+        self.sync()
+        self.assertEqual(self.rows()[0]['lab_key'],'2')
+
+    def test_removed_student_loses_current_eligibility(self):
+        self.sync()
+        self.grid.pop()
+        self.sync()
+        self.assertEqual(self.rows(),[])
+
 
 if __name__ == '__main__':
     unittest.main()

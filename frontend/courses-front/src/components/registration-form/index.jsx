@@ -158,7 +158,7 @@ const handleSubmit = async () => {
       </RegistrationButton>}
       {queueEnabled && tab === "queue" && <StudentQueue courseId={courseId} groupId={groupId} labId={labId} identity={formState} checking={isLoading} refreshToken={checkResult} />}
 
-      {tab === "registration" && checkResult && (
+      {checkResult && (
         <div style={{
           marginTop: "20px",
           padding: "16px",

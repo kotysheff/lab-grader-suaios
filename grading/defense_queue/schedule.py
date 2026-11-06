@@ -95,8 +95,13 @@ def validate_schedule(config):
     if config.get('source') == 'suai':
         if not str(config.get('group_id', '')).isdigit(): raise ValueError('Нужен числовой ID группы на сайте ГУАП')
         if not config.get('subject', '').strip(): raise ValueError('Нужно точное название предмета')
-        anchor = date.fromisoformat(config['week_anchor'])
+        try: anchor = date.fromisoformat(config.get('week_anchor', ''))
+        except (TypeError,ValueError): raise ValueError('Нужна дата начала нечётной недели') from None
         if anchor.weekday() != 0: raise ValueError('Начало первой нечётной недели должно быть понедельником')
+    if not isinstance(config.get('lessons', []), list): raise ValueError('lessons должен быть массивом')
+    if len(config.get('lessons', [])) > 500: raise ValueError('В одном импорте допускается до 500 занятий')
+    if config.get('semester_end'):
+        date.fromisoformat(config['semester_end'])
     return config
 
 
@@ -106,7 +111,7 @@ def expand_suai(lessons, config, *, now, timezone):
     zone = ZoneInfo(timezone)
     first = datetime.fromtimestamp(now, zone).date()
     anchor = date.fromisoformat(config['week_anchor'])
-    until = min(first + timedelta(days=56), date.fromisoformat(config.get('semester_end', '9999-12-31')))
+    until = min(first + timedelta(days=56), date.fromisoformat(config.get('semester_end') or '9999-12-31'))
     result = []
     for lesson in lessons:
         if lesson.get('subject', '').casefold() != config['subject'].strip().casefold(): continue

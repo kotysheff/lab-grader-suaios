@@ -60,7 +60,7 @@ class QueueWorker:
                         except Exception:
                             logger.exception('Schedule refresh failed for %s/%s; keeping existing lessons',course_id,group_id)
                     with self.store.connection() as con:
-                        sessions = [dict(r) for r in con.execute("SELECT * FROM sessions WHERE course_id=? AND group_id=? AND starts_at<=? AND enrollment_status NOT IN ('closed','cancelled')", (course_id,group_id,now))]
+                        sessions = [dict(r) for r in con.execute("SELECT * FROM sessions WHERE course_id=? AND group_id=? AND starts_at<=? AND enrollment_status!='cancelled' AND NOT EXISTS (SELECT 1 FROM queue_reconciliations r WHERE r.session_id=sessions.session_id AND r.done_at IS NOT NULL)", (course_id,group_id,now))]
                         available = all(r[0] for r in con.execute("SELECT deadline_available FROM queue_candidates WHERE course_id=? AND group_id=? AND status='eligible'", (course_id,group_id)))
                     for session in sessions:
                         # Заморозка использует сохранённый допуск до обновления таблицы.

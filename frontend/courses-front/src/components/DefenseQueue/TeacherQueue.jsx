@@ -5,7 +5,7 @@ import { displayDate, entryLabel } from "./state";
 import "./queue.css";
 
 const coursePath = id => `/admin/courses/${encodeURIComponent(id)}/queue`;
-const eventNames = { called: "Вызван", defended: "Защитил", failed: "Не защитил", no_show: "Не явился", withdrawn: "Исключён", added_to_tail: "Добавлен в конец", roster_frozen: "Состав зафиксирован", schedule_changed: "Занятие перенесено", cancelled: "Занятие отменено", sheet_defended: "Защита подтверждена таблицей", session_finished: "Ожидание завершено" };
+const eventNames = { called: "Вызван", defended: "Защитил", failed: "Не защитил", no_show: "Не явился", withdrawn: "Исключён", added_to_tail: "Добавлен в конец", roster_frozen: "Состав зафиксирован", schedule_changed: "Занятие перенесено", enrollment_closed:"Запись закрыта", enrollment_opened:"Запись открыта", cancelled: "Занятие отменено", sheet_defended: "Защита подтверждена таблицей", session_finished: "Ожидание завершено" };
 
 export function TeacherQueue({ initialCourse = "" }) {
   const [courses, setCourses] = useState([]), [course, setCourse] = useState(initialCourse);
@@ -56,6 +56,7 @@ export function TeacherQueue({ initialCourse = "" }) {
         <h2>{displayDate(data.session.starts_at,data.session.timezone)} · {group}</h2>
         <p>{data.mode === "random" ? "Случайный порядок" : "Приоритет по дедлайнам, от −1"}. {data.attendance_open ? "Студенты могут менять посещение до начала пары." : "Состав зафиксирован; изменения доступны преподавателю."}</p>
         {data.stale && <p className="queue-notice">Таблица недоступна. Показан сохранённый состав, обновление допуска ожидается.</p>}
+        {Date.now()/1000 < data.session.starts_at && data.session.enrollment_status !== "cancelled" && <button disabled={busy} onClick={() => action({action:data.session.enrollment_status === "closed" ? "open_enrollment" : "close_enrollment"})}>{data.session.enrollment_status === "closed" ? "Открыть запись" : "Закрыть запись досрочно"}</button>}
         <dl className="queue-summary">{[["waiting","Ждут"],["defended","Защитили"],["failed","Не защитили"],["no_show","Не явились"]].map(([key,label]) => <div key={key}><dt>{label}</dt><dd>{data.stats[key]}</dd></div>)}</dl>
         <button className="primary" disabled={busy || Date.now()/1000 < data.session.starts_at || !data.next_entry_id || Boolean(data.current_entry_id)} onClick={() => action({action:"call_next"})}>Вызвать следующего</button>
         <div className="queue-table-wrap"><table className="queue-table"><caption className="queue-sr-only">Все участники и результаты выбранного занятия</caption><thead><tr><th>Позиция</th><th>Студент / GitHub</th><th>Работа</th><th>Допущен</th><th>Статус</th><th>Действия</th></tr></thead><tbody>
@@ -71,7 +72,7 @@ export function TeacherQueue({ initialCourse = "" }) {
         </tbody></table></div>
         {!data.entries.length && <p>Участников пока нет.</p>}
         <details><summary>История и попытки</summary>
-          <ul className="queue-history">{data.history.map(e => <li key={e.event_id}>{displayDate(e.occurred_at,data.session.timezone)} · {eventNames[e.kind] || e.kind}{e.entry_id ? ` · попытка ${e.entry_id}` : ""}{e.candidate_id ? ` · участник ${e.candidate_id}` : ""}</li>)}</ul>
+          <ul className="queue-history">{data.history.map(e => <li key={e.event_id}>{displayDate(e.occurred_at,data.session.timezone)} · {eventNames[e.kind] || e.kind}{e.full_name ? ` · ${e.full_name} · работа ${e.lab_key}` : ""}{e.entry_id ? ` · попытка ${e.entry_id}` : ""}</li>)}</ul>
           <p>Сверка с таблицей: {data.reconciliation?.done_at ? displayDate(data.reconciliation.done_at,data.session.timezone) : data.reconciliation?.error ? "ожидается повтор после ошибки чтения" : "через 10 минут после окончания"}.</p>
         </details>
       </>}

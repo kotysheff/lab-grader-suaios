@@ -93,6 +93,35 @@ class OperationsTests(unittest.TestCase):
         self.assertTrue(effective['queue']['random'])
         self.assertIsNone(effective['queue']['deadlines']['1'])
 
+    def test_manual_tail_before_start_is_not_duplicated(self):
+        ops.add_to_tail(self.store,'s',self.ids[0],now=10,actor='admin')
+        view=self.view()
+        self.assertEqual(len([r for r in view['attempts'] if r['candidate_id']==self.ids[0]]),1)
+        self.assertTrue(next(r for r in view['attempts'] if r['candidate_id']==self.ids[0])['is_repeat'])
+
+    def test_overlapping_class_does_not_duplicate_active_student(self):
+        self.view()
+        self.store.create_session('overlap','c','g','teacher2',starts_at=105,ends_at=205,local_date='1970-01-01',now=1)
+        self.store.attendance('overlap',self.ids[0],True,now=90)
+        view=ops.teacher_view(self.store,'c','g',self.course,deadlines_available=True,now=110,session_id='overlap')
+        self.assertEqual(view['stats']['waiting'],0)
+
+    def test_settings_can_remove_yaml_deadline_override(self):
+        original={'queue':{'deadlines':{'1':'2026-01-01'},'random':True}}
+        ops.save_schedule(self.store,'c','g',{'source':'manual'},now=5)
+        self.assertTrue(ops.effective_course(self.store,'c',original)['queue']['random'])
+        ops.save_settings(self.store,'c',random=False,deadlines={},now=6)
+        self.assertEqual(ops.effective_course(self.store,'c',original)['queue']['deadlines'],{})
+        self.assertFalse(ops.effective_course(self.store,'c',original)['queue']['random'])
+
+    def test_early_close_reopen_and_freeze(self):
+        ops.set_enrollment(self.store,'s',closed=True,now=20,actor='admin')
+        with self.assertRaises(ValueError): self.store.attendance('s',self.ids[2],True,now=21)
+        ops.set_enrollment(self.store,'s',closed=False,now=22,actor='admin')
+        self.store.attendance('s',self.ids[2],True,now=23)
+        self.assertEqual(self.view()['stats']['waiting'],3)
+        with self.assertRaises(ValueError): ops.set_enrollment(self.store,'s',closed=False,now=100,actor='admin')
+
 
 if __name__ == '__main__':
     unittest.main()

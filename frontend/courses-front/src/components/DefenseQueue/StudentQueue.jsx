@@ -10,6 +10,12 @@ export function StudentQueue({ courseId, groupId, identity, checking, labId, ref
   const path = queueGroupPath(courseId, groupId);
   const { data, error, refresh } = usePolling(`${path}${checking ? `?preview_lab=${encodeURIComponent(labId)}` : ""}`, refreshToken);
   const me = ownEntry(data?.entries, identity.github);
+  const displayRows = [...(data?.entries || [])];
+  if (checking && !me && identity.github) {
+    const preview = { candidate_id: "preview", preview: true };
+    const index = displayRows.findIndex(row => row.will_attend && row.position >= data?.preview?.position);
+    displayRows.splice(index < 0 ? displayRows.length : index, 0, preview);
+  }
   async function choose(willAttend) {
     setSaving(true); setSaveError("");
     try {
@@ -26,16 +32,16 @@ export function StudentQueue({ courseId, groupId, identity, checking, labId, ref
     {data?.stale && <p className="queue-notice">Таблица временно недоступна. Показан сохранённый список; изменение посещения появится после обновления.</p>}
     {checking && <p className="queue-notice" role="status">Работа проверяется. Предварительная позиция не резервирует место.</p>}
     <ol className="queue-list">
-      {data?.entries?.map(row => <li key={row.candidate_id} className={`queue-row ${row.state} ${row.candidate_id === me?.candidate_id ? "mine" : ""}`}>
+      {displayRows.map(row => row.preview ? <li key="preview" className="queue-row queue-preview">
+        <span className="queue-rank">{data?.preview?.position ?? "?"}</span><div><strong>{identity.surname} {identity.name}</strong><small>{labId} · Предварительная позиция</small></div><small>Проверка…</small>
+      </li> : <li key={row.candidate_id} className={`queue-row ${row.state} ${row.candidate_id === me?.candidate_id ? "mine" : ""}`}>
         <span className="queue-rank">{row.position ?? "—"}</span>
         <div><strong className="queue-name">{row.full_name}</strong><small>{row.lab_title || `Работа ${row.lab_key}`} · <a href={`https://github.com/${encodeURIComponent(row.github)}`} target="_blank" rel="noreferrer">{row.github}</a></small></div>
         <small>{entryLabel(row)}</small>
       </li>)}
-      {checking && !me && identity.github && <li className="queue-row queue-preview">
-        <span className="queue-rank">{data?.preview?.position ?? "?"}</span><div><strong>{identity.surname} {identity.name}</strong><small>{labId} · {data?.preview?.position ? "Предварительная позиция" : "Позиция уточняется"}</small></div><small>Проверка…</small>
-      </li>}
     </ol>
     {data && !data.entries?.length && !checking && <p className="queue-muted">Пока нет допущенных участников. После успешной проверки работа появится здесь.</p>}
+    {data && !me && !checking && <p className="queue-muted">Для указанного GitHub допущенная работа пока не найдена. Успешно зарегистрируйте первую незащищённую лабораторную.</p>}
     {me && <div className="queue-notice">
       <strong>Придёте сдавать на это занятие?</strong>
       {!me.answered && <p>По умолчанию вы не включены в состав приходящих.</p>}
