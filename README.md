@@ -10,6 +10,8 @@ React + Vite (`frontend/courses-front/`), курсы — YAML-файлы в `cou
 
 ## Документация
 
+Материалы команды по очереди: **[исследование моделей и графики](research/queue-study/README.md)** · **[три ADR](docs/adr/README.md)** · **[проект БД](docs/queue/README.md)**. Это расчёты и архитектурная база; очередь ещё не подключена к сервису.
+
 | Документ | О чём |
 |---|---|
 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | Как поднять проект локально: таблица, GitHub, ключи, запуск, тесты |

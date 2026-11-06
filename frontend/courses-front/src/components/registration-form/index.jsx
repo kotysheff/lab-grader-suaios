@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { registerAndCheck, gradeLab } from "../../api";
+import { useEffect, useState } from "react";
+import { registerAndCheck, gradeLab, fetchCourseDetails } from "../../api";
 import { CardTitle, colors, MainContainer } from "../../../theme";
 import { Input, InputContainer, RegistrationButton } from "./styled";
 import Snackbar from "@mui/material/Snackbar";
@@ -7,13 +7,24 @@ import Alert from "@mui/material/Alert";
 import { ButtonBack } from "../course-list/styled";
 import { Breadcrumb } from "../breadcrumb";
 
+import { StudentQueue } from "../DefenseQueue/StudentQueue";
+import { cleanIdentity, identityKey } from "../DefenseQueue/state";
+
 export const RegistrationForm = ({ courseId, groupId, labId, onBack }) => {
-  const [formState, setFormState] = useState({
-    surname: "",
-    name: "",
-    patronymic: "",
-    github: "",
+  const [formState, setFormState] = useState(() => {
+    try { return cleanIdentity(JSON.parse(sessionStorage.getItem(identityKey(courseId, groupId)) || "{}")); }
+    catch { return cleanIdentity(); }
   });
+  const [queueEnabled, setQueueEnabled] = useState(false);
+  const [tab, setTab] = useState("registration");
+  useEffect(() => {
+    let active = true;
+    fetchCourseDetails(courseId).then(value => { if (active) setQueueEnabled(Boolean(value.queue_enabled)); }).catch(() => {});
+    return () => { active = false; };
+  }, [courseId]);
+  useEffect(() => {
+    try { sessionStorage.setItem(identityKey(courseId, groupId), JSON.stringify(formState)); } catch { /* Форма работает и без хранилища браузера. */ }
+  }, [courseId, groupId, formState]);
 
   const [checkResult, setCheckResult] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -24,6 +35,7 @@ export const RegistrationForm = ({ courseId, groupId, labId, onBack }) => {
 
 const handleSubmit = async () => {
   setIsLoading(true);
+  if (queueEnabled) setTab("queue");
   setCheckResult(null);
 
   try {
@@ -95,14 +107,20 @@ const handleSubmit = async () => {
 };
 
   return (
-    <MainContainer>
+    <MainContainer style={{ width: "min(100%, 720px)", boxSizing: "border-box" }}>
       <ButtonBack onClick={onBack}>← Назад</ButtonBack>
       <Breadcrumb courseId={courseId} groupId={groupId} labId={labId} />
-      <CardTitle>Запуск проверки</CardTitle>
+      <CardTitle>Проверка и защита лабораторной</CardTitle>
+      {queueEnabled && <div className="queue-tabs" role="tablist" aria-label="Разделы лабораторной">
+        <button role="tab" aria-selected={tab === "registration"} onClick={() => setTab("registration")}>Регистрация и проверка</button>
+        <button role="tab" aria-selected={tab === "queue"} onClick={() => setTab("queue")}>Список на занятие</button>
+      </div>}
       <InputContainer>
         <Input
           type="text"
           name="surname"
+          aria-label="Фамилия"
+          disabled={isLoading}
           placeholder="Фамилия"
           value={formState.surname}
           onChange={handleChange}
@@ -110,6 +128,8 @@ const handleSubmit = async () => {
         <Input
           type="text"
           name="name"
+          aria-label="Имя"
+          disabled={isLoading}
           placeholder="Имя"
           value={formState.name}
           onChange={handleChange}
@@ -117,6 +137,8 @@ const handleSubmit = async () => {
         <Input
           type="text"
           name="patronymic"
+          aria-label="Отчество"
+          disabled={isLoading}
           placeholder="Отчество"
           value={formState.patronymic}
           onChange={handleChange}
@@ -124,14 +146,17 @@ const handleSubmit = async () => {
         <Input
           type="text"
           name="github"
+          aria-label="GitHub"
+          disabled={isLoading}
           placeholder="GitHub-аккаунт (имя пользователя)"
           value={formState.github}
           onChange={handleChange}
         />
       </InputContainer>
-      <RegistrationButton onClick={handleSubmit} disabled={isLoading}>
+      {tab === "registration" && <RegistrationButton onClick={handleSubmit} disabled={isLoading}>
         {isLoading ? "Проверка..." : "Зарегистрироваться и запустить проверку"}
-      </RegistrationButton>
+      </RegistrationButton>}
+      {queueEnabled && tab === "queue" && <StudentQueue courseId={courseId} groupId={groupId} labId={labId} identity={formState} checking={isLoading} refreshToken={checkResult} />}
 
       {checkResult && (
         <div style={{
