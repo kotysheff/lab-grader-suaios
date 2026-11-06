@@ -1,4 +1,4 @@
-"""Run the provided AllModels unchanged, with an additional floor=0 variant."""
+"""Run registered research models and export their saved statistics."""
 import argparse
 import hashlib
 import json
@@ -10,7 +10,6 @@ sys.path.insert(0, str(ROOT / "source"))
 
 import common
 import models
-from models import priority_clamped_model
 from runner import run_and_save
 from study import write_csv
 import numpy as np
@@ -25,16 +24,12 @@ def main():
     args = parser.parse_args()
     out = ROOT / "results" / "original"
     if not args.export_only:
-        if not args.only_zero:
-            for cls in models.MODELS.values():
-                run_and_save(cls(), args.runs, args.seed, str(out / cls.name))
-        priority_clamped_model.MIN_PRIORITY = 0
-        model = priority_clamped_model.PriorityClampedQueueModel()
-        model.name = "priority_clamped_zero"
-        model.description = "priority = max(0, deadline - week), случайные равные приоритеты"
-        run_and_save(model, args.runs, args.seed, str(out / model.name))
+        targets = [models.MODELS["priority_clamped_zero"]] if args.only_zero else models.MODELS.values()
+        for cls in targets:
+            run_and_save(cls(), args.runs, args.seed, str(out / cls.name))
     rows = []
-    for directory in sorted(out.iterdir()):
+    for name in sorted(models.MODELS):
+        directory = out / name
         if not directory.is_dir() or not (directory / "all_scores.npy").exists():
             continue
         flat = np.load(directory / "all_scores.npy")

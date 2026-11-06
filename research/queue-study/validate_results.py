@@ -56,7 +56,10 @@ def main():
         assert scores.shape == (10_000, 30)
         check_array(scores, read_csv(directory / "per_run_stats.csv"), read_csv(directory / "score_distribution.csv"))
         original_runs += len(scores)
-    np.testing.assert_array_equal(np.load(original / "priority" / "all_scores.npy"), np.load(original / "fifo" / "all_scores.npy"))
+    assert {p.name for p in original.iterdir() if p.is_dir()} == {
+        "random", "priority", "priority_clamped", "priority_clamped_zero",
+        "most_passed", "target_three", "surname_k", "odd_number"}
+    assert (np.load(original / "target_three" / "all_scores.npy") <= 29).all()
     finalists = ROOT / "results" / "finalists"
     protocol = json.loads((finalists / "protocol.json").read_text())
     scenario_configs = {s["name"]: s for s in protocol["scenarios"]}
@@ -94,6 +97,16 @@ def main():
         np.testing.assert_allclose([float(row[k]) for k in ("delta", "ci95_low", "ci95_high")], paired_interval(a, b), atol=1e-12)
     for name, sha in json.loads((ROOT / "original_source_hashes.json").read_text()).items():
         assert hashlib.sha256((ROOT / "source" / name).read_bytes()).hexdigest() == sha
+    exam = read_csv(finalists / "exam_scenarios.csv")
+    assert len(exam) == 11 * len(POLICIES)
+    for policy in POLICIES:
+        scores = np.concatenate([np.load(finalists / "baseline" / str(seed) / f"{policy}_scores.npz")["scores"]
+                                 for seed in protocol["baseline_seeds"]])
+        for row in [r for r in exam if r["policy"] == policy]:
+            adjusted = np.minimum(50, scores + int(row["bonus"]))
+            np.testing.assert_allclose(float(row["share345"]), (adjusted >= 25).mean())
+            np.testing.assert_allclose(float(row["share3"]), ((adjusted >= 25) & (adjusted <= 32)).mean())
+            np.testing.assert_allclose(float(row["newly_passing_share"]), ((scores < 25) & (adjusted >= 25)).mean())
     # Check local Markdown targets. Fragments and external references are left to the renderer.
     markdown = [ROOT / "README.md", *list((ROOT.parents[1] / "docs" / "adr").glob("*.md")), *list((ROOT.parents[1] / "docs" / "queue").glob("*.md"))]
     link_count = 0
@@ -106,7 +119,7 @@ def main():
             generated = {ROOT / "validation.json", ROOT / "artifact_hashes.json"}
             assert resolved.exists() or resolved in generated, (path, target)
             link_count += 1
-    report = dict(status="passed", original_runs=original_runs, finalist_runs=total_runs, total_runs=total_runs + original_runs, finalist_student_outcomes=total_students, scenario_count=len(scenario_configs), local_links_checked=link_count, sqlite_version=sqlite3.sqlite_version, checks=checks, invariants=["score range and integer dtype", "all 51 histogram bins and shares", "per-run mean/median/population std and grade shares", "pooled and averaged statistics", "grade totals", "service capacity and wanted=served+rejected", "all paired CI values", "priority/fifo exact equivalence", "unchanged provided source hashes", "local Markdown targets"])
+    report = dict(status="passed", original_runs=original_runs, finalist_runs=total_runs, total_runs=total_runs + original_runs, finalist_student_outcomes=total_students, scenario_count=len(scenario_configs), local_links_checked=link_count, sqlite_version=sqlite3.sqlite_version, checks=checks, invariants=["score range and integer dtype", "all 51 histogram bins and shares", "per-run mean/median/population std and grade shares", "pooled and averaged statistics", "grade totals", "service capacity and wanted=served+rejected", "all paired CI values", "eight models and target-three threshold", "all exam scenarios from saved scores", "model source hashes", "local Markdown targets"])
     (ROOT / "validation.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
     artifacts = [p for p in ROOT.rglob("*") if p.is_file() and "__pycache__" not in p.parts and p.name != "artifact_hashes.json"]
     (ROOT / "artifact_hashes.json").write_text(json.dumps({str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(artifacts)}, indent=2) + "\n")

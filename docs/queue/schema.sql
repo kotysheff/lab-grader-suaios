@@ -5,8 +5,8 @@ CREATE TABLE courses (
     course_id TEXT PRIMARY KEY NOT NULL,
     title TEXT NOT NULL,
     timezone TEXT NOT NULL DEFAULT 'Europe/Moscow',
-    schedule_source TEXT NOT NULL CHECK (schedule_source IN ('university', 'manual', 'none')),
-    enrollment_lead_minutes INTEGER NOT NULL DEFAULT 15 CHECK (enrollment_lead_minutes >= 0),
+    schedule_source TEXT NOT NULL CHECK (schedule_source IN ('university', 'manual', 'mixed', 'none')),
+    university_key TEXT,
     enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1))
 );
 
@@ -38,7 +38,8 @@ CREATE TABLE schedule_overrides (
     override_id TEXT PRIMARY KEY NOT NULL,
     course_id TEXT NOT NULL,
     group_id TEXT NOT NULL,
-    kind TEXT NOT NULL CHECK (kind IN ('cancel_day', 'add_session')),
+    kind TEXT NOT NULL CHECK (kind IN ('cancel_session', 'add_session', 'move_session')),
+    target_session_id TEXT REFERENCES sessions(session_id),
     local_date TEXT NOT NULL,
     starts_at INTEGER,
     ends_at INTEGER,
@@ -48,12 +49,15 @@ CREATE TABLE schedule_overrides (
     created_by TEXT NOT NULL,
     created_at INTEGER NOT NULL,
     FOREIGN KEY (course_id, group_id) REFERENCES study_groups(course_id, group_id),
-    CHECK ((kind = 'cancel_day' AND starts_at IS NULL AND ends_at IS NULL)
-        OR (kind = 'add_session' AND starts_at IS NOT NULL AND ends_at IS NOT NULL AND starts_at < ends_at))
+    FOREIGN KEY (target_session_id, course_id, group_id)
+        REFERENCES sessions(session_id, course_id, group_id),
+    CHECK ((kind = 'cancel_session' AND target_session_id IS NOT NULL AND starts_at IS NULL AND ends_at IS NULL)
+        OR (kind IN ('add_session', 'move_session') AND starts_at IS NOT NULL AND ends_at IS NOT NULL AND starts_at < ends_at)),
+    CHECK (kind != 'move_session' OR target_session_id IS NOT NULL)
 );
-CREATE UNIQUE INDEX one_enabled_cancel_per_day
-    ON schedule_overrides(course_id, group_id, local_date)
-    WHERE enabled = 1 AND kind = 'cancel_day';
+CREATE UNIQUE INDEX one_enabled_cancel_per_session
+    ON schedule_overrides(target_session_id)
+    WHERE enabled = 1 AND kind = 'cancel_session';
 
 CREATE TABLE sessions (
     session_id TEXT PRIMARY KEY NOT NULL,
@@ -74,11 +78,48 @@ CREATE TABLE sessions (
     schedule_checked_at INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL,
     UNIQUE (course_id, group_id, source_key),
+    UNIQUE (session_id, course_id, group_id),
     UNIQUE (session_id, course_id, group_id, teacher_key),
     FOREIGN KEY (course_id, group_id) REFERENCES study_groups(course_id, group_id),
     CHECK (opens_at <= starts_at AND starts_at < ends_at AND ends_at <= expires_at)
 );
 CREATE INDEX sessions_by_group_date ON sessions(course_id, group_id, local_date);
+
+CREATE TABLE queue_candidates (
+    candidate_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    course_id TEXT NOT NULL,
+    group_id TEXT NOT NULL,
+    student_id INTEGER NOT NULL REFERENCES students(student_id),
+    lab_key TEXT NOT NULL,
+    lab_order INTEGER NOT NULL CHECK (lab_order >= 1),
+    deadline_at INTEGER NOT NULL,
+    qualified_at INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'eligible' CHECK (status IN ('eligible', 'defended', 'inactive')),
+    UNIQUE (candidate_id, course_id, group_id, student_id),
+    FOREIGN KEY (course_id, group_id) REFERENCES study_groups(course_id, group_id)
+);
+CREATE UNIQUE INDEX one_eligible_candidate_per_course
+    ON queue_candidates(course_id, student_id) WHERE status='eligible';
+
+CREATE TABLE session_participation (
+    session_id TEXT NOT NULL,
+    candidate_id INTEGER NOT NULL,
+    course_id TEXT NOT NULL,
+    group_id TEXT NOT NULL,
+    student_id INTEGER NOT NULL,
+    teacher_key TEXT NOT NULL,
+    will_attend INTEGER NOT NULL DEFAULT 1 CHECK (will_attend IN (0, 1)),
+    updated_at INTEGER NOT NULL,
+    frozen_at INTEGER,
+    PRIMARY KEY (session_id, candidate_id),
+    FOREIGN KEY (candidate_id, course_id, group_id, student_id)
+        REFERENCES queue_candidates(candidate_id, course_id, group_id, student_id),
+    FOREIGN KEY (session_id, course_id, group_id, teacher_key)
+        REFERENCES sessions(session_id, course_id, group_id, teacher_key)
+);
+CREATE TRIGGER frozen_participation BEFORE UPDATE ON session_participation
+WHEN OLD.frozen_at IS NOT NULL AND NEW.will_attend != OLD.will_attend
+BEGIN SELECT RAISE(ABORT, 'attendance is frozen for this session'); END;
 
 CREATE TABLE queue_entries (
     entry_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -88,6 +129,7 @@ CREATE TABLE queue_entries (
     group_id TEXT NOT NULL,
     teacher_key TEXT NOT NULL,
     student_id INTEGER NOT NULL REFERENCES students(student_id),
+    candidate_id INTEGER NOT NULL,
     lab_key TEXT NOT NULL,
     lab_order INTEGER NOT NULL CHECK (lab_order >= 1),
     full_name_snapshot TEXT NOT NULL,
@@ -105,6 +147,8 @@ CREATE TABLE queue_entries (
     version INTEGER NOT NULL DEFAULT 1 CHECK (version >= 1),
     FOREIGN KEY (session_id, course_id, group_id, teacher_key)
         REFERENCES sessions(session_id, course_id, group_id, teacher_key),
+    FOREIGN KEY (candidate_id, course_id, group_id, student_id)
+        REFERENCES queue_candidates(candidate_id, course_id, group_id, student_id),
     CHECK ((status IN ('waiting', 'called') AND closed_at IS NULL)
         OR (status NOT IN ('waiting', 'called') AND closed_at IS NOT NULL)),
     CHECK (status != 'called' OR called_at IS NOT NULL),
@@ -122,7 +166,8 @@ CREATE INDEX student_history ON queue_entries(course_id, student_id, joined_at);
 CREATE TABLE queue_events (
     event_id INTEGER PRIMARY KEY AUTOINCREMENT,
     entry_id INTEGER REFERENCES queue_entries(entry_id),
-    session_id TEXT NOT NULL REFERENCES sessions(session_id),
+    session_id TEXT REFERENCES sessions(session_id),
+    candidate_id INTEGER REFERENCES queue_candidates(candidate_id),
     actor_kind TEXT NOT NULL CHECK (actor_kind IN ('student', 'teacher', 'system')),
     actor_key TEXT NOT NULL,
     kind TEXT NOT NULL,
@@ -130,7 +175,8 @@ CREATE TABLE queue_events (
     to_status TEXT,
     details_json TEXT NOT NULL DEFAULT '{}',
     occurred_at INTEGER NOT NULL,
-    CHECK (json_valid(details_json))
+    CHECK (json_valid(details_json)),
+    CHECK (session_id IS NOT NULL OR candidate_id IS NOT NULL)
 );
 CREATE INDEX events_by_session ON queue_events(session_id, event_id);
 CREATE TRIGGER immutable_event_update BEFORE UPDATE ON queue_events

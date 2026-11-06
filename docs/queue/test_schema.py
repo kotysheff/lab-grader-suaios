@@ -17,12 +17,16 @@ def connect(path):
 
 
 def entry(con, key, student=1, session="s1", group="g1", teacher="t1", status="waiting", priority=-1, repeat=0):
+    con.execute("""INSERT INTO queue_candidates
+        (course_id,group_id,student_id,lab_key,lab_order,deadline_at,qualified_at)
+        VALUES ('c1',?,?,'lab1',1,20,10) ON CONFLICT DO NOTHING""", (group, student))
+    candidate_id = con.execute("SELECT candidate_id FROM queue_candidates WHERE course_id='c1' AND student_id=? AND status='eligible'", (student,)).fetchone()[0]
     con.execute("""INSERT INTO queue_entries
         (request_key,session_id,course_id,group_id,teacher_key,student_id,lab_key,lab_order,
         full_name_snapshot,eligibility_snapshot,eligibility_checked_at,deadline_at,
-        priority,is_repeat,joined_at,called_at,status)
-        VALUES (?,?,'c1',?,?,?,'lab1',1,'Synthetic Student','v',10,20,?,?,10,?,?)""",
-        (key, session, group, teacher, student, priority, repeat, 11 if status == "called" else None, status))
+        priority,is_repeat,joined_at,called_at,status,candidate_id)
+        VALUES (?,?,'c1',?,?,?,'lab1',1,'Synthetic Student','v',10,20,?,?,10,?,?,?)""",
+        (key, session, group, teacher, student, priority, repeat, 11 if status == "called" else None, status, candidate_id))
 
 
 class SchemaTests(unittest.TestCase):
@@ -129,6 +133,55 @@ class SchemaTests(unittest.TestCase):
         entry(self.con, "r1")
         self.con.execute("UPDATE sessions SET enrollment_status='cancelled' WHERE session_id='s1'")
         self.assertEqual(self.con.execute("SELECT status FROM queue_entries").fetchone()[0], "waiting")
+
+    def participation(self):
+        entry(self.con, "r1")
+        self.con.execute("""INSERT INTO session_participation
+            (session_id,candidate_id,course_id,group_id,student_id,teacher_key,updated_at)
+            VALUES ('s1',1,'c1','g1',1,'t1',0)""")
+
+    def test_attendance_can_be_changed_both_ways_before_freeze(self):
+        self.participation()
+        for value in (0, 1):
+            self.con.execute("UPDATE session_participation SET will_attend=?", (value,))
+            self.assertEqual(self.con.execute("SELECT will_attend FROM session_participation").fetchone()[0], value)
+
+    def test_frozen_attendance_rejects_student_change(self):
+        self.participation()
+        self.con.execute("UPDATE session_participation SET frozen_at=10")
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.con.execute("UPDATE session_participation SET will_attend=0")
+
+    def test_move_session_preserves_identity_and_participation(self):
+        self.participation()
+        self.con.execute("UPDATE sessions SET starts_at=40,ends_at=50,expires_at=60,local_date='2026-11-07' WHERE session_id='s1'")
+        self.assertEqual(self.con.execute("SELECT session_id,will_attend FROM session_participation").fetchone(), ("s1", 1))
+
+    def test_closing_attempt_does_not_remove_persistent_candidate(self):
+        entry(self.con, "r1")
+        self.con.execute("UPDATE queue_entries SET status='expired',closed_at=30")
+        self.assertEqual(self.con.execute("SELECT status FROM queue_candidates").fetchone()[0], "eligible")
+
+    def test_qualification_event_can_exist_before_any_session(self):
+        entry(self.con, "r1")
+        self.con.execute("""INSERT INTO queue_events(candidate_id,actor_kind,actor_key,kind,occurred_at)
+            VALUES (1,'system','sync','qualified',10)""")
+        self.assertEqual(self.con.execute("SELECT candidate_id,session_id FROM queue_events").fetchone(), (1, None))
+
+    def test_cancel_and_add_same_day_are_compatible(self):
+        self.con.execute("""INSERT INTO schedule_overrides
+            (override_id,course_id,group_id,kind,target_session_id,local_date,created_by,created_at)
+            VALUES ('cancel','c1','g1','cancel_session','s1','2026-11-06','t1',0)""")
+        self.con.execute("""INSERT INTO schedule_overrides
+            (override_id,course_id,group_id,kind,local_date,starts_at,ends_at,created_by,created_at)
+            VALUES ('extra','c1','g1','add_session','2026-11-06',40,50,'t1',0)""")
+        self.assertEqual(self.con.execute("SELECT count(*) FROM schedule_overrides").fetchone()[0], 2)
+
+    def test_override_cannot_target_another_group(self):
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.con.execute("""INSERT INTO schedule_overrides
+                (override_id,course_id,group_id,kind,target_session_id,local_date,created_by,created_at)
+                VALUES ('cancel','c1','g2','cancel_session','s1','2026-11-06','t1',0)""")
 
 
 if __name__ == "__main__":

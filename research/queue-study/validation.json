@@ -1,20 +1,20 @@
 {
   "status": "passed",
-  "original_runs": 60000,
+  "original_runs": 80000,
   "finalist_runs": 780000,
-  "total_runs": 840000,
+  "total_runs": 860000,
   "finalist_student_outcomes": 24300000,
   "scenario_count": 24,
-  "local_links_checked": 58,
+  "local_links_checked": 69,
   "sqlite_version": "3.53.1",
   "checks": [
     {
       "test": "research/queue-study/test_study.py",
-      "output": "......\n----------------------------------------------------------------------\nRan 6 tests in 0.130s\n\nOK"
+      "output": ".........\n----------------------------------------------------------------------\nRan 9 tests in 0.170s\n\nOK"
     },
     {
       "test": "docs/queue/test_schema.py",
-      "output": "..........\n----------------------------------------------------------------------\nRan 10 tests in 0.079s\n\nOK"
+      "output": ".................\n----------------------------------------------------------------------\nRan 17 tests in 0.150s\n\nOK"
     }
   ],
   "invariants": [
@@ -25,8 +25,9 @@
     "grade totals",
     "service capacity and wanted=served+rejected",
     "all paired CI values",
-    "priority/fifo exact equivalence",
-    "unchanged provided source hashes",
+    "eight models and target-three threshold",
+    "all exam scenarios from saved scores",
+    "model source hashes",
     "local Markdown targets"
   ]
 }

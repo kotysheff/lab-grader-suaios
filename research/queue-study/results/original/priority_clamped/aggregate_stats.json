@@ -1,6 +1,6 @@
 {
   "model": "priority_clamped",
-  "description": "Как priority, но приоритет ограничен снизу: priority = max(-1, deadline_текущей_лабы − week). Просрочившие на 3+ недель равны между собой и разыгрываются случайно",
+  "description": "priority = max(-1, deadline текущей работы - week); при равенстве приоритетов порядок случайный",
   "averaged_over_runs": {
     "mean_of_means": 36.86526333333333,
     "mean_of_medians": 41.89145,

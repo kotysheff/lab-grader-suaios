@@ -4,9 +4,9 @@ from dataclasses import dataclass
 import numpy as np
 
 # ---------- Распределение "потенциала" студентов ----------
-# "uniform": рандом, U(0,1) - σ~0.29, есть "никогда не сдающие"
+# "uniform": U(0,1), стандартное отклонение около 0.29
 # "normal":  N(0.5, 0.15) clip - центр 0.5, без крайностей
-# "beta":    Beta(5,5) - тот же центр/σ, но гладко на [0,1], без обрезки
+# "beta": Beta(5,5), среднее 0.5, стандартное отклонение около 0.151
 PASS_CHANCE_DIST  = "normal"
 
 # ---------- Параметры модели ----------
@@ -15,7 +15,7 @@ N_LABS            = 10
 N_WEEKS           = 30
 CAPACITY          = 20
 MAX_POINTS_PER_LAB = 5
-N_RUNS_DEFAULT    = 1_000
+N_RUNS_DEFAULT    = 10_000
 BASE_SEED_DEFAULT = 42
 EXAM_BONUS = 5
 
@@ -33,7 +33,7 @@ GRADE_BINS = {
 class SimState:
     current_lab: np.ndarray        # (N,) — номер текущей лабы у каждого студента
     completion_week: np.ndarray    # (N, N_LABS) — неделя сдачи, −1 если не сдал
-    pass_chances: np.ndarray       # (N,) — p ~ U(0,1), фиксированы на прогон
+    pass_chances: np.ndarray       # (N,) — выбранное распределение, фиксировано на прогон
     deadlines: np.ndarray          # (N_LABS,)
     week: int                      # текущая неделя (1..N_WEEKS)
     n_labs: int
@@ -55,7 +55,6 @@ def draw_pass_chances(rng: np.random.Generator, n: int) -> np.ndarray:
 # ---------- Один прогон ----------
 def simulate_one(model, seed: int) -> np.ndarray:
     rng = np.random.default_rng(seed)
-    #pass_chances = rng.uniform(0.0, 1.0, size=N_STUDENTS)
     pass_chances = draw_pass_chances(rng, N_STUDENTS)
     current_lab = np.zeros(N_STUDENTS, dtype=int)
     completion_week = np.full((N_STUDENTS, N_LABS), -1, dtype=int)

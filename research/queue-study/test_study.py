@@ -7,6 +7,9 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from study import Scenario, paired_interval, priority, simulate
+sys.path.insert(0, str(Path(__file__).resolve().parent / "source"))
+from common import SimState
+from models import MODELS
 
 
 def scalar_reference(config, policy, runs, seed):
@@ -46,6 +49,43 @@ def scalar_reference(config, policy, runs, seed):
 
 
 class StudyTests(unittest.TestCase):
+    def model_state(self):
+        return SimState(current_lab=np.arange(30) % 10,
+                        completion_week=np.full((30, 10), -1),
+                        pass_chances=np.full(30, .5), deadlines=np.arange(1, 11) * 3 - 1,
+                        week=10, n_labs=10, rng=np.random.default_rng(42))
+
+    def test_registered_models_and_standalone_zero_class(self):
+        self.assertEqual(set(MODELS), {"random", "priority", "priority_clamped", "priority_clamped_zero", "most_passed", "target_three", "surname_k", "odd_number"})
+        self.assertIsNot(MODELS["priority_clamped"], MODELS["priority_clamped_zero"])
+        for name, floor in (("priority_clamped", -1), ("priority_clamped_zero", 0)):
+            state = self.model_state()
+            order = MODELS[name]().order_queue(state)
+            keys = np.maximum(floor, state.deadlines[state.current_lab] - state.week)
+            self.assertTrue(np.all(np.diff(keys[order]) >= 0))
+
+    def test_arbitrary_rules_and_valid_orders(self):
+        for name, cls in MODELS.items():
+            with self.subTest(name=name):
+                state = self.model_state()
+                order = cls().order_queue(state)
+                self.assertEqual(len(order), len(np.unique(order)))
+                self.assertTrue(np.isin(order, state.active()).all())
+        order = MODELS["surname_k"]().order_queue(self.model_state())
+        self.assertEqual(set(order[:3]), {0, 10, 20})
+        order = MODELS["odd_number"]().order_queue(self.model_state())
+        self.assertTrue(np.all((order[:15] + 1) % 2 == 1))
+
+    def test_target_three_stops_at_threshold_and_prefers_closer(self):
+        state = self.model_state()
+        state.current_lab[:] = 0
+        state.current_lab[0:2] = [5, 4]
+        state.completion_week[0, :5] = 1
+        state.completion_week[1, :4] = 1
+        order = MODELS["target_three"]().order_queue(state)
+        self.assertNotIn(0, order)
+        self.assertEqual(order[0], 1)
+
     def test_floor_boundaries(self):
         delta = np.array([-18, -2, -1, 0, 1, 18])
         np.testing.assert_array_equal(priority(delta, "clamp_minus1"), [-1, -1, -1, 0, 1, 18])

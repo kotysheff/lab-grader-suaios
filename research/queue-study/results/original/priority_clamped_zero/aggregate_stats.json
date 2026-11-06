@@ -1,6 +1,6 @@
 {
   "model": "priority_clamped_zero",
-  "description": "priority = max(0, deadline - week), случайные равные приоритеты",
+  "description": "priority = max(0, deadline текущей работы - week); текущие и просроченные работы равны, порядок внутри класса случайный",
   "averaged_over_runs": {
     "mean_of_means": 37.18844333333333,
     "mean_of_medians": 42.37435,

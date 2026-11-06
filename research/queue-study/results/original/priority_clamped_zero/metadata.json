@@ -1,6 +1,6 @@
 {
   "model": "priority_clamped_zero",
-  "description": "priority = max(0, deadline - week), случайные равные приоритеты",
+  "description": "priority = max(0, deadline текущей работы - week); текущие и просроченные работы равны, порядок внутри класса случайный",
   "params": {
     "N_STUDENTS": 30,
     "N_LABS": 10,
@@ -42,5 +42,5 @@
     "n_runs": 10000,
     "base_seed": 42
   },
-  "class": "models.priority_clamped_model.PriorityClampedQueueModel"
+  "class": "models.priority_clamped_model.PriorityClampedZeroQueueModel"
 }
