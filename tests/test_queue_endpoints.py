@@ -183,3 +183,45 @@ def test_real_grade_hook_reads_admission_without_writing_marks(tmp_path,monkeypa
         assert con.execute("SELECT count(*) FROM queue_candidates WHERE status='eligible'").fetchone()[0]==eligible
         if eligible:
             assert con.execute('SELECT deadline_available FROM queue_candidates').fetchone()[0]==1
+
+
+def test_http_move_and_cancel_preserve_candidate_and_participation(queue_client):
+    client,store,_,now=queue_client
+    authenticate(client)
+    with store.connection() as con: cid=con.execute("SELECT candidate_id FROM queue_candidates WHERE status='eligible'").fetchone()[0]
+    store.attendance('future',cid,True,now=now)
+    path='/admin/courses/c/groups/g/queue/sessions/future'
+    response=client.patch(path,json={'starts_at':datetime.fromtimestamp(now+5400,timezone.utc).isoformat(),'ends_at':datetime.fromtimestamp(now+9000,timezone.utc).isoformat()})
+    assert response.status_code==200,response.text
+    view=client.get('/courses/c/groups/g/queue').json()
+    assert view['session']['session_id']=='future' and view['entries'][0]['will_attend']
+    assert client.patch(path,json={'cancel':True}).status_code==200
+    assert client.get('/courses/c/groups/g/queue').json()['session'] is None
+    with store.connection() as con: assert con.execute("SELECT count(*) FROM queue_candidates WHERE status='eligible'").fetchone()[0]==1
+
+
+def test_expired_teacher_cookie_rejected(queue_client):
+    from unittest.mock import patch
+    client,_,_,now=queue_client
+    with patch('time.time',return_value=now-4000):
+        cookie=main.signer.sign(main.ADMIN_LOGIN.encode()).decode()
+    client.cookies.set('admin_session',cookie)
+    assert client.get('/admin/queue/sessions').status_code==401
+
+
+@pytest.mark.parametrize('secret',[None,'super-secret-key'])
+def test_startup_rejects_missing_or_public_secret(tmp_path,secret):
+    import os,subprocess,sys
+    env=dict(os.environ,LOG_DIR=str(tmp_path/'logs'),ADMIN_LOGIN='test',ADMIN_PASSWORD='test',GITHUB_TOKEN='dummy',QUEUE_WORKER_ENABLED='0')
+    env.pop('SECRET_KEY',None)
+    if secret is not None: env['SECRET_KEY']=secret
+    run=subprocess.run([sys.executable,'-c','import main'],env=env,capture_output=True,text=True,timeout=20)
+    assert run.returncode!=0 and 'собственный SECRET_KEY' in run.stderr
+
+
+def test_teacher_schedule_shows_configured_university(queue_client):
+    client,store,_,now=queue_client
+    from grading.defense_queue.operations import save_schedule
+    save_schedule(store,'c','g',{'source':'manual','university':'Тестовый вуз'},now=now)
+    authenticate(client)
+    assert client.get('/admin/queue/sessions').json()[0]['university']=='Тестовый вуз'

@@ -1376,7 +1376,18 @@ def list_teacher_queue_sessions(request: Request, admin: str = Depends(require_a
     with store.connection() as con:
         rows = con.execute('''SELECT s.*,c.title AS course_title FROM sessions s JOIN courses c USING(course_id)
                               ORDER BY starts_at DESC LIMIT 500''').fetchall()
-    return [dict(row) for row in rows]
+    from grading.defense_queue.operations import effective_course
+    courses = {}
+    result = []
+    for row in rows:
+        cid = row['course_id']
+        if cid not in courses:
+            try: courses[cid] = effective_course(store,cid,get_course_by_id(cid))
+            except HTTPException: courses[cid] = {}
+        course = courses[cid]
+        schedule = course.get('queue',{}).get('schedule',{}).get(row['group_id'],{})
+        result.append(dict(row, university=schedule.get('university') or course.get('university','')))
+    return result
 
 
 @app.get('/admin/courses/{course_id}/groups/{group_id}/queue')
