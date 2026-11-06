@@ -141,7 +141,7 @@ CREATE TABLE queue_entries (
     eligibility_checked_at INTEGER NOT NULL,
     deadline_at INTEGER,
     deadline_available INTEGER NOT NULL DEFAULT 1 CHECK (deadline_available IN (0, 1)),
-    priority INTEGER NOT NULL CHECK (priority >= -1),
+    priority INTEGER CHECK (priority >= -1),
     is_repeat INTEGER NOT NULL DEFAULT 0 CHECK (is_repeat IN (0, 1)),
     joined_at INTEGER NOT NULL,
     called_at INTEGER,
@@ -163,7 +163,7 @@ CREATE UNIQUE INDEX one_active_student_per_course
     ON queue_entries(course_id, student_id) WHERE status IN ('waiting', 'called');
 CREATE UNIQUE INDEX one_called_per_teacher
     ON queue_entries(teacher_key) WHERE status = 'called';
-CREATE INDEX waiting_order ON queue_entries(session_id, is_repeat, priority, entry_id)
+CREATE INDEX waiting_order ON queue_entries(session_id, is_repeat, (priority IS NULL), priority, entry_id)
     WHERE status = 'waiting';
 CREATE INDEX student_history ON queue_entries(course_id, student_id, joined_at);
 
