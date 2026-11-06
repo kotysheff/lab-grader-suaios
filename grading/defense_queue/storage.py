@@ -21,19 +21,20 @@ class QueueStore:
             con.execute("BEGIN IMMEDIATE")
             try:
                 version = con.execute("PRAGMA user_version").fetchone()[0]
-                if version > 1:
+                if version > 2:
                     raise ValueError("Версия базы очереди новее поддерживаемой")
-                if version == 0:
-                    sql = Path(__file__).with_name("migrations").joinpath("001_initial.sql").read_text()
+                migrations = Path(__file__).with_name("migrations")
+                for target in range(version + 1, 3):
+                    path = next(migrations.glob(f"{target:03d}_*.sql"))
                     statement = ""
-                    for line in sql.splitlines(keepends=True):
+                    for line in path.read_text().splitlines(keepends=True):
                         statement += line
                         if sqlite3.complete_statement(statement):
                             con.execute(statement)
                             statement = ""
                     if statement.strip() and not all(line.lstrip().startswith('--') or not line.strip() for line in statement.splitlines()):
                         raise ValueError("Незавершённая миграция")
-                    con.execute("PRAGMA user_version=1")
+                    con.execute(f"PRAGMA user_version={target}")
                 con.commit()
             except Exception:
                 con.rollback()

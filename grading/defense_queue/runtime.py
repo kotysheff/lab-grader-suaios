@@ -29,7 +29,9 @@ def sync_queue(course_id, group_id, course, *, fetch_grid, parse_deadline, force
     if not course.get('queue', {}).get('enabled', False):
         raise ValueError('Очередь не включена для курса')
     store = queue_store()
-    key = (str(store.path), course_id, group_id)
+    from .operations import effective_course
+    course = effective_course(store, course_id, course)
+    key = (str(store.path), course_id, group_id, json.dumps(course.get('queue', {}), sort_keys=True, default=str))
     with _LOCKS_GUARD:
         lock = _LOCKS.setdefault(key, threading.Lock())
     with lock:
@@ -57,6 +59,8 @@ def sync_queue(course_id, group_id, course, *, fetch_grid, parse_deadline, force
 
 
 def queue_view(store, course_id, group_id, course, *, deadlines_available, now, session_id=None):
+    from .operations import effective_course
+    course = effective_course(store, course_id, course)
     with store.connection() as con:
         if session_id:
             session = con.execute('SELECT * FROM sessions WHERE session_id=? AND course_id=? AND group_id=?',
@@ -67,7 +71,7 @@ def queue_view(store, course_id, group_id, course, *, deadlines_available, now, 
                 ORDER BY starts_at,session_id LIMIT 1""", (course_id, group_id, now)).fetchone()
     if session is not None and now >= session['starts_at']:
         with store.connection() as con:
-            frozen = con.execute("SELECT details_json FROM queue_events WHERE session_id=? AND kind='roster_frozen' ORDER BY event_id LIMIT 1", (session['session_id'],)).fetchone()
+            frozen = con.execute("SELECT details_json FROM queue_events WHERE session_id=? AND kind='roster_frozen' AND json_extract(details_json,'$.session.schedule_revision')=? ORDER BY event_id LIMIT 1", (session['session_id'], session['schedule_revision'])).fetchone()
         if frozen:
             result = json.loads(frozen[0])
             result['session'] = dict(session)
@@ -125,7 +129,7 @@ def queue_view(store, course_id, group_id, course, *, deadlines_available, now, 
               'entries': entries, 'attendance_open': now < session['starts_at'] and session['enrollment_status'] not in ('closed', 'cancelled')}
     if now >= session['starts_at']:
         with store.transaction() as con:
-            frozen = con.execute("SELECT details_json FROM queue_events WHERE session_id=? AND kind='roster_frozen' ORDER BY event_id LIMIT 1", (session['session_id'],)).fetchone()
+            frozen = con.execute("SELECT details_json FROM queue_events WHERE session_id=? AND kind='roster_frozen' AND json_extract(details_json,'$.session.schedule_revision')=? ORDER BY event_id LIMIT 1", (session['session_id'], session['schedule_revision'])).fetchone()
             if frozen:
                 return json.loads(frozen[0])
             con.execute("""INSERT INTO queue_events(session_id,actor_kind,actor_key,kind,details_json,occurred_at)

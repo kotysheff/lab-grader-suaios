@@ -1314,6 +1314,175 @@ def create_queue_session(request: Request, course_id: str, group_id: str,
         raise HTTPException(status_code=409, detail='Не удалось создать занятие. Проверьте идентификатор и данные')
 
 
+# Панель преподавателя: все изменения требуют существующей admin_session.
+def _queue_admin_context(course_id, group_id=None, *, force=False):
+    from grading.defense_queue.runtime import queue_store
+    from grading.defense_queue.operations import effective_course
+    course = get_course_by_id(course_id)
+    if not course.get('queue', {}).get('enabled', False):
+        raise HTTPException(status_code=404, detail='Включите queue.enabled в конфигурации курса')
+    store = queue_store()
+    course = effective_course(store, course_id, course)
+    summary = None
+    if group_id is not None:
+        store, summary = _sync_defense_queue(course_id, group_id, course, force=force)
+    return store, course, summary
+
+
+def _queue_error(error):
+    from grading.defense_queue.storage import QueueClosed, QueueConflict
+    import sqlite3
+    if isinstance(error, HTTPException):
+        raise error
+    if isinstance(error, (QueueClosed, QueueConflict, sqlite3.IntegrityError)):
+        raise HTTPException(status_code=409, detail=str(error))
+    if isinstance(error, ValueError):
+        raise HTTPException(status_code=422, detail=str(error))
+    logger.exception('Queue operation failed')
+    raise HTTPException(status_code=502, detail='Операцию не удалось выполнить. Обновите список и повторите')
+
+
+@app.get('/admin/queue/sessions')
+def list_teacher_queue_sessions(request: Request, admin: str = Depends(require_admin)):
+    from grading.defense_queue.runtime import queue_store
+    store = queue_store()
+    with store.connection() as con:
+        rows = con.execute('''SELECT s.*,c.title AS course_title FROM sessions s JOIN courses c USING(course_id)
+                              ORDER BY starts_at DESC LIMIT 500''').fetchall()
+    return [dict(row) for row in rows]
+
+
+@app.get('/admin/courses/{course_id}/groups/{group_id}/queue')
+def get_teacher_queue(request: Request, course_id: str, group_id: str, session_id: str,
+                      admin: str = Depends(require_admin)):
+    import time
+    from grading.defense_queue.operations import teacher_view
+    try:
+        store, course, summary = _queue_admin_context(course_id, group_id)
+        return teacher_view(store, course_id, group_id, course, deadlines_available=summary['deadlines_available'],
+                            now=int(time.time()), session_id=session_id)
+    except Exception as error:
+        _queue_error(error)
+
+
+class QueueActionRequest(BaseModel):
+    session_id: str
+    action: str
+    entry_id: int | None = None
+    candidate_id: int | None = None
+    outcome: str | None = None
+
+
+@app.post('/admin/courses/{course_id}/groups/{group_id}/queue/actions')
+def teacher_queue_action(request: Request, course_id: str, group_id: str, data: QueueActionRequest,
+                         admin: str = Depends(require_admin)):
+    import time
+    from grading.defense_queue import operations as op
+    try:
+        store, course, summary = _queue_admin_context(course_id, group_id)
+        now = int(time.time())
+        view = op.teacher_view(store, course_id, group_id, course, deadlines_available=summary['deadlines_available'],
+                               now=now, session_id=data.session_id)
+        if data.entry_id is not None and data.entry_id not in {row['entry_id'] for row in view['attempts']}:
+            raise ValueError('Попытка не относится к выбранному занятию')
+        if data.action == 'call_next':
+            op.call_next(store, data.session_id, now=now, actor=admin)
+        elif data.action == 'result' and data.entry_id is not None:
+            old = next(row for row in view['attempts'] if row['entry_id'] == data.entry_id)
+            op.record_result(store, data.entry_id, data.outcome, now=now, actor=admin)
+            if data.outcome == 'defended':
+                # Следующая уже допущенная работа появляется в хвосте текущего приёма.
+                try:
+                    _sync_defense_queue(course_id, group_id, course, force=True)
+                    with store.connection() as con:
+                        candidate = con.execute("SELECT candidate_id FROM queue_candidates WHERE course_id=? AND student_id=? AND status='eligible'", (course_id, old['student_id'])).fetchone()
+                    if candidate and now < view['session']['ends_at']:
+                        op.add_to_tail(store, data.session_id, candidate[0], now=now, actor=admin)
+                except Exception:
+                    logger.exception('Next admitted lab will be picked up on the next sync')
+        elif data.action == 'withdraw' and data.entry_id is not None:
+            op.withdraw(store, data.entry_id, now=now, actor=admin)
+        elif data.action == 'add_tail' and data.candidate_id is not None:
+            op.add_to_tail(store, data.session_id, data.candidate_id, now=now, actor=admin)
+        else:
+            raise ValueError('Неизвестное действие или не передан участник')
+        return op.teacher_view(store, course_id, group_id, course, deadlines_available=summary['deadlines_available'],
+                               now=now, session_id=data.session_id)
+    except Exception as error:
+        _queue_error(error)
+
+
+@app.get('/admin/courses/{course_id}/queue/settings')
+def get_queue_settings(request: Request, course_id: str, admin: str = Depends(require_admin)):
+    try:
+        _, course, _ = _queue_admin_context(course_id)
+        return {'queue': course.get('queue', {}), 'labs': [{'key': str(key), 'title': value.get('short-name', str(key))}
+                                                        for key, value in course.get('labs', {}).items()]}
+    except Exception as error:
+        _queue_error(error)
+
+
+class QueueSettingsRequest(BaseModel):
+    random: bool = False
+    deadlines: dict[str, str | None] = Field(default_factory=dict)
+
+
+@app.put('/admin/courses/{course_id}/queue/settings')
+def set_queue_settings(request: Request, course_id: str, data: QueueSettingsRequest,
+                       admin: str = Depends(require_admin)):
+    import time
+    from grading.defense_queue.operations import save_settings
+    from grading.sheets_client import parse_deadline
+    try:
+        store, course, _ = _queue_admin_context(course_id)
+        if any(key not in course.get('labs', {}) for key in data.deadlines):
+            raise ValueError('Дедлайн задан для неизвестной работы')
+        for value in data.deadlines.values():
+            if value is not None and parse_deadline(value, course.get('timezone')) is None:
+                raise ValueError('Дата должна иметь формат ГГГГ-ММ-ДД или ДД.ММ.ГГГГ')
+        # Обеспечить наличие родительского курса без чтения внешней таблицы.
+        from grading.defense_queue.sync import course_timezone
+        with store.transaction() as con:
+            con.execute('''INSERT INTO courses(course_id,title,timezone,schedule_source) VALUES (?,?,?,'manual')
+                           ON CONFLICT(course_id) DO NOTHING''', (course_id, course.get('name', course_id), course_timezone(course)))
+        save_settings(store, course_id, random=data.random, deadlines=data.deadlines, now=int(time.time()))
+        return {'status': 'updated'}
+    except Exception as error:
+        _queue_error(error)
+
+
+class QueueMoveRequest(BaseModel):
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+    cancel: bool = False
+
+
+@app.patch('/admin/courses/{course_id}/groups/{group_id}/queue/sessions/{session_id}')
+def edit_queue_session(request: Request, course_id: str, group_id: str, session_id: str,
+                       data: QueueMoveRequest, admin: str = Depends(require_admin)):
+    import time
+    from grading.defense_queue import operations as op
+    from grading.defense_queue.sync import course_timezone
+    from zoneinfo import ZoneInfo
+    try:
+        store, course, _ = _queue_admin_context(course_id)
+        with store.connection() as con:
+            found = con.execute('SELECT 1 FROM sessions WHERE session_id=? AND course_id=? AND group_id=?', (session_id, course_id, group_id)).fetchone()
+        if not found:
+            raise ValueError('Занятие не найдено')
+        if data.cancel:
+            op.cancel_session(store, session_id, now=int(time.time()), actor=admin)
+        else:
+            if data.starts_at is None or data.ends_at is None or data.starts_at.utcoffset() is None or data.ends_at.utcoffset() is None:
+                raise ValueError('Задайте начало и окончание с часовым поясом')
+            op.move_session(store, session_id, starts_at=int(data.starts_at.timestamp()), ends_at=int(data.ends_at.timestamp()),
+                            local_date=data.starts_at.astimezone(ZoneInfo(course_timezone(course))).date().isoformat(),
+                            now=int(time.time()), actor=admin)
+        return {'status': 'updated'}
+    except Exception as error:
+        _queue_error(error)
+
+
 # ---------------------------------------------------------------------------
 # /join: automatic student repo creation (replaces GitHub Classroom)
 # See docs/REPO_GENERATION_PLAN.md for the full design.
