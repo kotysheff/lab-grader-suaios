@@ -1,6 +1,6 @@
 {
-  "README.md": "7140dcd19ca5fb51ef67911d3a5dd4cab1c7e3b95641ac2b30d986c2d9d62a83",
-  "article.md.in": "a97de00ed3bd9c06153144e42e69968566c1df366c5b5a48a2d991a8fec63349",
+  "README.md": "d4ccd971acf1b60c3c02c5b934f396fcc64ad616c5d4f709128d7c6f136431ba",
+  "article.md.in": "87d81dda4ca251defa09b5842873d5f4a4a53bf601f8136a13ddd4bf04ed1efb",
   "environment.json": "cc650cc14701878aac1f0df325cc2543afb0ae4cfad08b62fa5b217c7e984694",
   "figures/all-models.png": "8a7ee414f1056169b363f8764d43508d23ddfc197a9f7b7400eb70c78acc81dc",
   "figures/all-models.svg": "47ebc6117ca82c20dfa21802502ab1eaa28db925e796d1ca247ec4cbf68925ed",
@@ -388,5 +388,5 @@
   "study.py": "7109791f4c3759213e3cda332a6d21721d5f52be93f625456dd30617c087b3af",
   "test_study.py": "6938a0fcd2d7791ad4430971e43d868751f7b2cede69ecb3e4ad9e4a6c88ee56",
   "validate_results.py": "ac20d4a72631aac954b757a368a7670a3badc3225d6f4abb29cfa787ca7d69d6",
-  "validation.json": "3e98808a495ddc159db143a8e4c254e14068295565ae8948dedc4f664841cf85"
+  "validation.json": "f4478b995bd639d60b84c66f919eda3c970b63750b5c8097f18a821f5b82f16a"
 }
