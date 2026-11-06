@@ -47,3 +47,9 @@
 @keyframes queue-check { 50% { background-color: #e6eee9; } }
 @media(prefers-reduced-motion:reduce) { .queue-preview { animation: none; } }
 @media(max-width:600px) { .queue-admin { padding: 16px; } .queue-row { grid-template-columns: 24px minmax(0,1fr); } .queue-row > :last-child { grid-column: 2; } }
+
+.queue-sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.queue-checkbox { display: flex !important; align-items: center; gap: 8px; }
+.queue-surface fieldset { border: 1px solid #ccc; border-radius: 6px; padding: 12px; }
+.queue-surface details { margin-top: 24px; }
+.queue-surface summary { cursor: pointer; padding: 8px 0; }

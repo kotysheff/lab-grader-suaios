@@ -1375,8 +1375,10 @@ def get_teacher_queue(request: Request, course_id: str, group_id: str, session_i
     from grading.defense_queue.operations import teacher_view
     try:
         store, course, summary = _queue_admin_context(course_id, group_id)
-        return teacher_view(store, course_id, group_id, course, deadlines_available=summary['deadlines_available'],
-                            now=int(time.time()), session_id=session_id)
+        result = teacher_view(store, course_id, group_id, course, deadlines_available=summary['deadlines_available'],
+                              now=int(time.time()), session_id=session_id)
+        result['stale'] = summary.get('stale', False)
+        return result
     except Exception as error:
         _queue_error(error)
 
@@ -1429,10 +1431,12 @@ def teacher_queue_action(request: Request, course_id: str, group_id: str, data: 
 
 
 @app.get('/admin/courses/{course_id}/queue/settings')
-def get_queue_settings(request: Request, course_id: str, admin: str = Depends(require_admin)):
+def get_queue_settings(request: Request, course_id: str, group_id: str | None = None, admin: str = Depends(require_admin)):
     try:
-        _, course, _ = _queue_admin_context(course_id)
-        return {'queue': course.get('queue', {}), 'labs': [{'key': str(key), 'title': value.get('short-name', str(key))}
+        _, course, summary = _queue_admin_context(course_id, group_id)
+        from grading.defense_queue.policy import resolve_mode
+        mode = resolve_mode(deadlines_available=summary['deadlines_available'], random_override=course.get('queue', {}).get('random', False)) if summary else None
+        return {'mode_locked': mode.locked if mode else None, 'mode': mode.name if mode else None, 'queue': course.get('queue', {}), 'labs': [{'key': str(key), 'title': value.get('short-name', str(key))}
                                                         for key, value in course.get('labs', {}).items()]}
     except Exception as error:
         _queue_error(error)
