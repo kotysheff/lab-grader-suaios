@@ -148,6 +148,7 @@ class SchemaTests(unittest.TestCase):
 
     def test_frozen_attendance_rejects_student_change(self):
         self.participation()
+        self.con.execute("UPDATE session_participation SET will_attend=1,attendance_answered=1")
         self.con.execute("UPDATE session_participation SET frozen_at=10")
         with self.assertRaises(sqlite3.IntegrityError):
             self.con.execute("UPDATE session_participation SET will_attend=0")
@@ -155,7 +156,11 @@ class SchemaTests(unittest.TestCase):
     def test_move_session_preserves_identity_and_participation(self):
         self.participation()
         self.con.execute("UPDATE sessions SET starts_at=40,ends_at=50,expires_at=60,local_date='2026-11-07' WHERE session_id='s1'")
-        self.assertEqual(self.con.execute("SELECT session_id,will_attend FROM session_participation").fetchone(), ("s1", 1))
+        self.assertEqual(self.con.execute("SELECT session_id,will_attend FROM session_participation").fetchone(), ("s1", 0))
+
+    def test_default_is_not_attending_and_not_answered(self):
+        self.participation()
+        self.assertEqual(self.con.execute("SELECT will_attend,attendance_answered FROM session_participation").fetchone(), (0, 0))
 
     def test_closing_attempt_does_not_remove_persistent_candidate(self):
         entry(self.con, "r1")
