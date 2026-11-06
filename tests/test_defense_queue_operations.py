@@ -122,6 +122,14 @@ class OperationsTests(unittest.TestCase):
         self.assertEqual(self.view()['stats']['waiting'],3)
         with self.assertRaises(ValueError): ops.set_enrollment(self.store,'s',closed=False,now=100,actor='admin')
 
+    def test_withdraw_and_manual_readd_in_same_second(self):
+        first=ops.add_to_tail(self.store,'s',self.ids[2],now=10,actor='admin')
+        ops.withdraw(self.store,first,now=10,actor='admin')
+        second=ops.add_to_tail(self.store,'s',self.ids[2],now=10,actor='admin')
+        self.assertNotEqual(first,second)
+        with self.store.connection() as con:
+            self.assertEqual(con.execute('SELECT status FROM queue_entries WHERE entry_id=?',(second,)).fetchone()[0],'waiting')
+
 
 if __name__ == '__main__':
     unittest.main()

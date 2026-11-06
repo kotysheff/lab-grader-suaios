@@ -194,3 +194,8 @@ pnpm-debug.log*
 .vite/
 dist/
 .cache/logs/
+
+# Persistent defense queue and local SQLite backups
+/data/
+queue-backup-*.sqlite3
+queue-backup-*.sqlite3-*

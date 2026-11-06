@@ -91,4 +91,27 @@ class ScheduleTests(unittest.TestCase):
             self.assertEqual([r[0] for r in con.execute('SELECT status FROM queue_entries ORDER BY entry_id')],['defended','expired'])
             self.assertEqual(con.execute('SELECT attempts FROM queue_reconciliations').fetchone()[0],2)
 
+    def test_worker_freezes_and_reconciles_without_open_browser(self):
+        self.store.configure_group('c','g',title='Предмет')
+        student=self.store.student('Студент','login',now=1)
+        cid=self.store.qualify('c','g',student,'1',1,deadline_at=None,now=1)
+        self.store.create_session('s','c','g','t',starts_at=100,ends_at=200,local_date='1970-01-01',now=1)
+        self.store.attendance('s',cid,True,now=2)
+        calls=[]
+        def sync(*args,**kwargs):
+            calls.append(kwargs)
+            if kwargs.get('force'):
+                with self.store.transaction() as con: con.execute("UPDATE queue_candidates SET status='defended' WHERE candidate_id=?",(cid,))
+            return self.store, {'deadlines_available':True}
+        course=dict(self.course,queue={'enabled':True})
+        service=worker.QueueWorker(self.store,lambda:[('c',course)],sync,lambda url:None)
+        service.tick(now=100)
+        with self.store.connection() as con:
+            self.assertEqual(con.execute("SELECT count(*) FROM queue_entries WHERE status='waiting'").fetchone()[0],1)
+        worker.QueueWorker(Store(self.store.path),lambda:[('c',course)],sync,lambda url:None).tick(now=800)
+        with self.store.connection() as con:
+            self.assertEqual(con.execute('SELECT status FROM queue_entries').fetchone()[0],'defended')
+            self.assertEqual(con.execute('SELECT done_at FROM queue_reconciliations').fetchone()[0],800)
+        self.assertTrue(any(c.get('force') for c in calls))
+
 if __name__ == '__main__': unittest.main()

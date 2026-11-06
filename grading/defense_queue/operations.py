@@ -1,7 +1,7 @@
 """Операции преподавателя. Авторизация выполняется HTTP-слоем."""
 from datetime import date, datetime, timezone
 import json
-import sqlite3
+from uuid import uuid4
 
 from .policy import priority_for
 from .runtime import queue_view
@@ -159,7 +159,7 @@ def add_to_tail(store, session_id, candidate_id, *, now, actor):
         old = con.execute("SELECT entry_id FROM queue_entries WHERE course_id=? AND student_id=? AND status IN ('waiting','called')", (candidate['course_id'], candidate['student_id'])).fetchone()
         if old:
             raise QueueConflict('У студента уже есть активная попытка')
-        entry_id = _insert_attempt(con, candidate, session, request_key=f'manual:{session_id}:{candidate_id}:{now}', repeat=True, now=now)
+        entry_id = _insert_attempt(con, candidate, session, request_key=f'manual:{session_id}:{candidate_id}:{uuid4().hex}', repeat=True, now=now)
         _event(con, session_id, 'added_to_tail', now, actor=actor, entry_id=entry_id, candidate_id=candidate_id)
         return entry_id
 

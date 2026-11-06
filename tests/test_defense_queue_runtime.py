@@ -98,6 +98,19 @@ class RuntimeTests(unittest.TestCase):
             runtime.sync_queue('c', 'g', course, fetch_grid=lambda: grid, parse_deadline=lambda x: None)
         self.assertEqual(len(self.view(102, 'one')['entries']), 1)
 
+    def test_offline_snapshot_survives_process_cache_clear(self):
+        from unittest.mock import patch
+        course={'name':'Предмет','timezone':'UTC','google':{'student-name-column':1},'queue':{'enabled':True},'labs':{'1':{'short-name':'ЛР1'}}}
+        grid=[['','','GitHub','2026-11-01'],['№','ФИО','','ЛР1'],['1','Студент','login','v']]
+        parse=lambda value: __import__('datetime').datetime.fromisoformat(value).replace(tzinfo=__import__('datetime').timezone.utc)
+        with patch.object(runtime,'queue_store',return_value=self.store), patch.object(runtime.time,'time',return_value=50):
+            runtime.sync_queue('c','g',course,fetch_grid=lambda:grid,parse_deadline=parse,force=True)
+            runtime._CACHE.clear()
+            def fail(): raise OSError('offline')
+            _,summary=runtime.sync_queue('c','g',course,fetch_grid=fail,parse_deadline=parse,force=True)
+        self.assertTrue(summary['stale'])
+        self.assertEqual(summary['eligible'],1)
+
 
 if __name__ == '__main__':
     unittest.main()
