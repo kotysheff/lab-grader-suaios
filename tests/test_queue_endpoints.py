@@ -94,3 +94,14 @@ def test_settings_and_manual_schedule_without_sheet_access(queue_client):
     assert any(row['session_id']=='manual' for row in client.get('/admin/queue/sessions').json())
     with store.connection() as con:
         assert con.execute('SELECT random_override FROM queue_settings').fetchone()[0]==1
+
+
+def test_queue_dates_support_iana_zone_and_explicit_offset():
+    from grading.defense_queue.sync import parse_queue_deadline
+    from grading.sheets_client import parse_deadline
+    course={'timezone':'UTC+3','queue':{'timezone':'Asia/Tokyo'}}
+    parsed=parse_queue_deadline('2026-11-07',course,parse_deadline)
+    assert parsed.utcoffset().total_seconds()==9*3600
+    assert parsed.hour==23
+    explicit=parse_queue_deadline('2026-11-07T15:00:00+02:00',course,parse_deadline)
+    assert explicit.utcoffset().total_seconds()==2*3600

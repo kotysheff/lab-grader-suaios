@@ -4,8 +4,9 @@ import logging
 import threading
 import time
 
-from .operations import effective_course, teacher_view
+from .operations import effective_course, teacher_view, promote_next_labs
 from .schedule import refresh_schedule
+from .runtime import saved_deadlines_available
 
 logger = logging.getLogger(__name__)
 
@@ -16,10 +17,16 @@ def reconcile(store, session_id, *, now, sync):
         task = con.execute('SELECT * FROM queue_reconciliations WHERE session_id=?', (session_id,)).fetchone()
         if not task or task['done_at'] or task['due_at'] > now or task['claimed_at'] is not None and task['claimed_at'] > now-300:
             return False
+        session = con.execute('SELECT schedule_revision FROM sessions WHERE session_id=?',(session_id,)).fetchone()
+        revision = session[0]
+        attempt = task['attempts'] + 1
         con.execute('UPDATE queue_reconciliations SET claimed_at=?,attempts=attempts+1 WHERE session_id=?', (now,session_id))
     try:
         sync()  # Принудительное чтение Sheets, без транзакции и без записи оценок.
         with store.transaction() as con:
+            current = con.execute('SELECT r.claimed_at,r.attempts,s.schedule_revision,s.enrollment_status FROM queue_reconciliations r JOIN sessions s USING(session_id) WHERE session_id=?',(session_id,)).fetchone()
+            if current['claimed_at'] != now or current['attempts'] != attempt or current['schedule_revision'] != revision or current['enrollment_status'] == 'cancelled':
+                return False
             rows = con.execute("SELECT e.*,c.status AS candidate_status FROM queue_entries e JOIN queue_candidates c USING(candidate_id) WHERE e.session_id=? AND e.status IN ('waiting','called')", (session_id,)).fetchall()
             for row in rows:
                 status = 'defended' if row['candidate_status'] == 'defended' else 'expired'
@@ -30,7 +37,7 @@ def reconcile(store, session_id, *, now, sync):
         return True
     except Exception as error:
         with store.transaction() as con:
-            con.execute('UPDATE queue_reconciliations SET claimed_at=NULL,due_at=?,error=? WHERE session_id=?', (now+60,str(error)[:500],session_id))
+            con.execute('UPDATE queue_reconciliations SET claimed_at=NULL,due_at=?,error=? WHERE session_id=? AND claimed_at=? AND attempts=?', (now+60,str(error)[:500],session_id,now,attempt))
         logger.warning('Queue reconciliation failed for %s: %s', session_id, type(error).__name__)
         return False
 
@@ -61,7 +68,7 @@ class QueueWorker:
                             logger.exception('Schedule refresh failed for %s/%s; keeping existing lessons',course_id,group_id)
                     with self.store.connection() as con:
                         sessions = [dict(r) for r in con.execute("SELECT * FROM sessions WHERE course_id=? AND group_id=? AND starts_at<=? AND enrollment_status!='cancelled' AND NOT EXISTS (SELECT 1 FROM queue_reconciliations r WHERE r.session_id=sessions.session_id AND r.done_at IS NOT NULL)", (course_id,group_id,now))]
-                        available = all(r[0] for r in con.execute("SELECT deadline_available FROM queue_candidates WHERE course_id=? AND group_id=? AND status='eligible'", (course_id,group_id)))
+                    available = saved_deadlines_available(self.store,course_id,group_id)
                     for session in sessions:
                         # Заморозка использует сохранённый допуск до обновления таблицы.
                         teacher_view(self.store,course_id,group_id,course,deadlines_available=available,now=now,session_id=session['session_id'])
@@ -71,6 +78,8 @@ class QueueWorker:
                         reconcile(self.store,session['session_id'],now=now,sync=sync)
                     # Подхват новых допусков даже без открытой страницы.
                     self.sync(course_id,group_id,original)
+                    for session in sessions:
+                        promote_next_labs(self.store, session['session_id'], now=now, actor='recovery')
                 except Exception:
                     logger.exception('Queue background update failed for %s/%s',course_id,group_id)
 

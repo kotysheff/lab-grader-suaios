@@ -3,6 +3,7 @@ from contextlib import contextmanager
 from pathlib import Path
 import secrets
 import sqlite3
+import threading
 
 
 class QueueClosed(ValueError):
@@ -15,6 +16,7 @@ class QueueConflict(ValueError):
 
 class QueueStore:
     def __init__(self, path: str | Path):
+        self._local = threading.local()
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.connection() as con:
@@ -42,6 +44,10 @@ class QueueStore:
 
     @contextmanager
     def connection(self):
+        active = getattr(self._local, "transaction", None)
+        if active is not None:
+            yield active
+            return
         con = sqlite3.connect(self.path, timeout=5, isolation_level=None)
         con.row_factory = sqlite3.Row
         con.execute("PRAGMA foreign_keys=ON")
@@ -54,14 +60,22 @@ class QueueStore:
 
     @contextmanager
     def transaction(self):
+        # Вложенные операции группы присоединяются к общей атомарной записи.
+        active = getattr(self._local, 'transaction', None)
+        if active is not None:
+            yield active
+            return
         with self.connection() as con:
             con.execute("BEGIN IMMEDIATE")
+            self._local.transaction = con
             try:
                 yield con
                 con.commit()
             except Exception:
                 con.rollback()
                 raise
+            finally:
+                del self._local.transaction
 
     @staticmethod
     def event(con, candidate_id, kind, now, *, session_id=None, actor="system", actor_key="queue"):

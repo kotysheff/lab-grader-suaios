@@ -36,7 +36,7 @@ def save_settings(store, course_id, *, random, deadlines, now):
             (course_id, int(random), json.dumps(deadlines), now))
 
 
-def _insert_attempt(con, candidate, session, *, request_key, repeat, now, rank=None):
+def _insert_attempt(con, candidate, session, *, request_key, repeat, now, rank=None, snapshot=None):
     student = con.execute('SELECT * FROM students WHERE student_id=?', (candidate['student_id'],)).fetchone()
     cursor = con.execute('''INSERT INTO queue_entries(request_key,session_id,course_id,group_id,teacher_key,student_id,
         candidate_id,lab_key,lab_order,full_name_snapshot,github_snapshot,eligibility_snapshot,eligibility_checked_at,
@@ -44,7 +44,7 @@ def _insert_attempt(con, candidate, session, *, request_key, repeat, now, rank=N
         VALUES (?,?,?,?,?,?,?,?,?,?,?,'admitted',?,?,?,?,?,?) ON CONFLICT(request_key) DO NOTHING''',
         (request_key, session['session_id'], session['course_id'], session['group_id'], session['teacher_key'],
          candidate['student_id'], candidate['candidate_id'], candidate['lab_key'], candidate['lab_order'],
-         student['full_name'], student['github_login'], now, candidate['deadline_at'], candidate['deadline_available'], rank, int(repeat), now))
+         snapshot['full_name'] if snapshot else student['full_name'], snapshot['github'] if snapshot else student['github_login'], now, candidate['deadline_at'], candidate['deadline_available'], rank, int(repeat), now))
     return cursor.lastrowid
 
 
@@ -53,6 +53,8 @@ def materialize(store, view, course, *, now):
     if session is None or now < session['starts_at'] or session['enrollment_status'] == 'cancelled':
         return
     with store.transaction() as con:
+        if con.execute('SELECT 1 FROM queue_reconciliations WHERE session_id=? AND done_at IS NOT NULL', (session['session_id'],)).fetchone():
+            return
         for row in view['entries']:
             if not row['will_attend']:
                 continue
@@ -62,15 +64,18 @@ def materialize(store, view, course, *, now):
                 continue
             if con.execute("SELECT 1 FROM queue_entries WHERE course_id=? AND student_id=? AND session_id!=? AND status IN ('waiting','called')", (session['course_id'], candidate['student_id'], session['session_id'])).fetchone():
                 continue
-            rank = None
-            if candidate['deadline_at'] is not None and candidate['deadline_available']:
+            candidate = dict(candidate)
+            for field in ('deadline_at','deadline_available'):
+                if field in row: candidate[field] = row[field]
+            rank = row.get('priority')
+            if 'priority' not in row and candidate['deadline_at'] is not None and candidate['deadline_available']:
                 rank = priority_for(datetime.fromtimestamp(candidate['deadline_at'], timezone.utc),
                                     datetime.fromtimestamp(session['starts_at'], timezone.utc),
                                     week_anchor=date.fromisoformat(course.get('queue', {}).get('semester_week_anchor', '1970-01-05')),
                                     timezone=course_timezone(course))
-            _insert_attempt(con, candidate, session, request_key=initial_key, repeat=False, rank=rank, now=now)
+            _insert_attempt(con, candidate, session, request_key=initial_key, repeat=False, rank=rank, now=now, snapshot=row)
         con.execute('''INSERT INTO queue_reconciliations(session_id,due_at) VALUES (?,?)
-            ON CONFLICT(session_id) DO UPDATE SET due_at=excluded.due_at WHERE queue_reconciliations.done_at IS NULL''',
+            ON CONFLICT(session_id) DO NOTHING''',
             (session['session_id'], session['ends_at'] + 600))
 
 
@@ -223,3 +228,20 @@ def set_enrollment(store, session_id, *, closed, now, actor):
             raise QueueClosed('Посещение можно менять только до начала неотменённого занятия')
         con.execute('UPDATE sessions SET enrollment_status=? WHERE session_id=?', ('closed' if closed else 'scheduled',session_id))
         _event(con,session_id,'enrollment_closed' if closed else 'enrollment_opened',now,actor=actor)
+
+
+def promote_next_labs(store, session_id, *, now, actor):
+    """Повтор синхронизации после сетевого сбоя не теряет следующую защиту."""
+    with store.transaction() as con:
+        session=con.execute('SELECT * FROM sessions WHERE session_id=?',(session_id,)).fetchone()
+        if not session or not session['starts_at'] <= now < session['ends_at'] or session['enrollment_status']=='cancelled':
+            return
+        candidates=con.execute("""SELECT DISTINCT c.candidate_id FROM queue_candidates c
+            JOIN queue_entries old ON old.student_id=c.student_id AND old.course_id=c.course_id
+            WHERE old.session_id=? AND old.status='defended' AND c.status='eligible'
+            AND c.group_id=? AND c.lab_order>old.lab_order
+            AND NOT EXISTS(SELECT 1 FROM queue_entries e WHERE e.session_id=? AND e.candidate_id=c.candidate_id)
+            AND NOT EXISTS(SELECT 1 FROM queue_entries e WHERE e.course_id=c.course_id AND e.student_id=c.student_id AND e.status IN ('waiting','called'))
+            ORDER BY c.candidate_id""",(session_id,session['group_id'],session_id)).fetchall()
+        for row in candidates:
+            add_to_tail(store,session_id,row['candidate_id'],now=now,actor=actor)

@@ -1189,6 +1189,7 @@ def grade_lab(request: Request, course_id: str, group_id: str, lab_id: str, grad
 # Очередь защиты: включается для курса через queue.enabled.
 def _sync_defense_queue(course_id, group_id, course, *, sheet=None, force=False):
     from grading.defense_queue.runtime import sync_queue
+    from grading.defense_queue.sync import parse_queue_deadline
     from grading.sheets_client import parse_deadline
     if course.get('queue', {}).get('enabled'):
         _ensure_queue_worker()
@@ -1211,7 +1212,7 @@ def _sync_defense_queue(course_id, group_id, course, *, sheet=None, force=False)
         return target.get_all_values()
 
     return sync_queue(course_id, group_id, public_course, fetch_grid=fetch_grid,
-                      parse_deadline=lambda value: parse_deadline(value, course.get('timezone')),
+                      parse_deadline=lambda value: parse_queue_deadline(value, course, parse_deadline),
                       force=force)
 
 
@@ -1461,8 +1462,9 @@ def set_queue_settings(request: Request, course_id: str, data: QueueSettingsRequ
         store, course, _ = _queue_admin_context(course_id)
         if any(key not in course.get('labs', {}) for key in data.deadlines):
             raise ValueError('Дедлайн задан для неизвестной работы')
+        from grading.defense_queue.sync import parse_queue_deadline
         for value in data.deadlines.values():
-            if value is not None and parse_deadline(value, course.get('timezone')) is None:
+            if value is not None and parse_queue_deadline(value, course, parse_deadline) is None:
                 raise ValueError('Дата должна иметь формат ГГГГ-ММ-ДД или ДД.ММ.ГГГГ')
         # Обеспечить наличие родительского курса без чтения внешней таблицы.
         from grading.defense_queue.sync import course_timezone
