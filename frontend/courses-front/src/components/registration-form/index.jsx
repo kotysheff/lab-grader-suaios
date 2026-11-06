@@ -7,6 +7,7 @@ import Alert from "@mui/material/Alert";
 import { ButtonBack } from "../course-list/styled";
 import { Breadcrumb } from "../breadcrumb";
 
+import { queueAppearance } from "../DefenseQueue/appearance";
 import { StudentQueue } from "../DefenseQueue/StudentQueue";
 import { cleanIdentity, identityKey } from "../DefenseQueue/state";
 
@@ -107,7 +108,7 @@ const handleSubmit = async () => {
 };
 
   return (
-    <MainContainer style={{ width: "min(100%, 720px)", boxSizing: "border-box" }}>
+    <MainContainer style={{ ...queueAppearance, width: "min(100%, 720px)", boxSizing: "border-box" }}>
       <ButtonBack onClick={onBack}>← Назад</ButtonBack>
       <Breadcrumb courseId={courseId} groupId={groupId} labId={labId} />
       <CardTitle>Проверка и защита лабораторной</CardTitle>

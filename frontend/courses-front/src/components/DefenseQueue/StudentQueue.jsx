@@ -3,6 +3,7 @@ import { queueGroupPath, queueRequest } from "../../api";
 import { ownEntry, canIdentify, displayDate, entryLabel } from "./state";
 import { usePolling } from "./usePolling";
 import "./queue.css";
+import { queueAppearance } from "./appearance";
 
 export function StudentQueue({ courseId, groupId, identity, checking, labId, refreshToken }) {
   const [saving, setSaving] = useState(false);
@@ -25,7 +26,7 @@ export function StudentQueue({ courseId, groupId, identity, checking, labId, ref
     finally { setSaving(false); }
   }
   if (error?.status === 404) return <p className="queue-muted">Для этого предмета очередь пока не включена.</p>;
-  return <section className="queue-surface" aria-label="Список на занятие">
+  return <section className="queue-surface" style={queueAppearance} aria-label="Список на занятие">
     <h2>Ближайшее занятие</h2>
     {data?.session ? <p><strong>{displayDate(data.session.starts_at, data.session.timezone)}</strong><br /><small>Группа {groupId} · {data.mode === "random" ? "Случайный порядок" : "Приоритет по дедлайнам, от −1"}</small></p> : data ? <p>{data.message}</p> : !error && <p role="status">Загружается список…</p>}
     {error && <div className="queue-notice queue-error" role="alert">{error.message} <button onClick={refresh}>Повторить</button></div>}
@@ -44,7 +45,7 @@ export function StudentQueue({ courseId, groupId, identity, checking, labId, ref
     {data && !me && !checking && <p className="queue-muted">Для указанного GitHub допущенная работа пока не найдена. Успешно зарегистрируйте первую незащищённую лабораторную.</p>}
     {me && <div className="queue-notice">
       <strong>Придёте сдавать на это занятие?</strong>
-      {!me.answered && <p>По умолчанию вы не включены в состав приходящих.</p>}
+      <p className="queue-attendance-hint" aria-live="polite">{!me.answered ? "По умолчанию вы не включены в состав приходящих." : me.will_attend ? "Приход подтверждён. Ответ можно изменить до начала занятия." : "Вы отметили, что не придёте. Ответ можно изменить до начала занятия."}</p>
       <div className="queue-actions">
         <button aria-pressed={me.will_attend} disabled={!data.attendance_open || data.stale || saving || checking || !canIdentify(identity)} onClick={() => choose(true)}>Да, я приду</button>
         <button aria-pressed={!me.will_attend} disabled={!data.attendance_open || data.stale || saving || checking || !canIdentify(identity)} onClick={() => choose(false)}>Нет, не приду</button>
@@ -53,7 +54,7 @@ export function StudentQueue({ courseId, groupId, identity, checking, labId, ref
       {!canIdentify(identity) && <p>Заполните ФИО и GitHub в форме выше.</p>}
     </div>}
     {saveError && <p role="alert" className="queue-notice queue-error">{saveError}</p>}
-    {saving && <p role="status">Сохраняется ответ…</p>}
+    <div className={`queue-feedback ${saving ? "is-saving" : ""}`} role="status" aria-live="polite"><span className="queue-spinner" aria-hidden="true" />{saving ? "Сохраняется ответ…" : ""}</div>
     <small>Ответ можно изменить до начала пары. Для возвращения к списку новая проверка не требуется.</small>
   </section>;
 }

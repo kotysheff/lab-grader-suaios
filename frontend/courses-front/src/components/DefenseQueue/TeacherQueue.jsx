@@ -3,6 +3,8 @@ import { fetchCourses, fetchGroups, queueGroupPath, queueRequest } from "../../a
 import { usePolling } from "./usePolling";
 import { displayDate, entryLabel } from "./state";
 import "./queue.css";
+import { queueAppearance } from "./appearance";
+import { useRowMotion } from "./useRowMotion";
 
 const coursePath = id => `/admin/courses/${encodeURIComponent(id)}/queue`;
 const eventNames = { called: "Вызван", defended: "Защитил", failed: "Не защитил", no_show: "Не явился", withdrawn: "Исключён", added_to_tail: "Добавлен в конец", roster_frozen: "Состав зафиксирован", schedule_changed: "Занятие перенесено", enrollment_closed:"Запись закрыта", enrollment_opened:"Запись открыта", cancelled: "Занятие отменено", sheet_defended: "Защита подтверждена таблицей", session_finished: "Ожидание завершено" };
@@ -37,36 +39,38 @@ export function TeacherQueue({ initialCourse = "" }) {
   }
   const action = payload => perform(() => queueRequest(`${path}/actions`, { method:"POST", body:{ session_id:sessionId, ...payload } }));
   const data = roster.data;
-  return <main className="queue-surface queue-admin">
-    <a href="/admin/courses">← Предметы</a>
-    <h1>Защита лабораторных</h1>
-    <p className="queue-muted">Полный состав занятия, результаты и расписание.</p>
-    <div className="queue-toolbar">
-      <label>Предмет<select value={course} onChange={e => setCourse(e.target.value)}>{courses.map(c => <option key={c.id} value={c.id}>{c.name || c.id}</option>)}</select></label>
-      <label>Группа<select value={group} onChange={e => { setGroup(e.target.value); setSessionId(""); }}>{groups.map(g => <option key={g}>{g}</option>)}</select></label>
-      <label>Занятие<select value={sessionId} onChange={e => setSessionId(e.target.value)}><option value="">Выберите занятие</option>{filtered.map(s => <option key={s.session_id} value={s.session_id}>{displayDate(s.starts_at,s.timezone)}{s.enrollment_status === "cancelled" ? " · отменено" : ""}</option>)}</select></label>
+  const rowContainer = useRowMotion(`${sessionId}:${tab}:${data?.entries.map(row => row.candidate_id).join(",") || ""}`);
+  return <main className="queue-surface queue-admin" style={queueAppearance}>
+    <a className="queue-back" href="/admin/courses">← Предметы</a>
+    <header className="queue-page-heading"><h1>Защита лабораторных</h1>
+    <p className="queue-muted">Полный состав занятия, результаты и расписание.</p></header>
+    <div className="queue-toolbar queue-filters">
+      <label>Предмет<select disabled={busy} value={course} onChange={e => setCourse(e.target.value)}>{courses.map(c => <option key={c.id} value={c.id}>{c.name || c.id}</option>)}</select></label>
+      <label>Группа<select disabled={busy} value={group} onChange={e => { setGroup(e.target.value); setSessionId(""); }}>{groups.map(g => <option key={g}>{g}</option>)}</select></label>
+      <label>Занятие<select disabled={busy} value={sessionId} onChange={e => setSessionId(e.target.value)}><option value="">Выберите занятие</option>{filtered.map(s => <option key={s.session_id} value={s.session_id}>{displayDate(s.starts_at,s.timezone)}{s.enrollment_status === "cancelled" ? " · отменено" : ""}</option>)}</select></label>
     </div>
-    <nav className="queue-tabs" aria-label="Разделы панели">{[["queue","Очередь"],["schedule","Расписание"],["settings","Дедлайны и порядок"]].map(([key,label]) => <button key={key} aria-current={tab===key ? "page" : undefined} className={tab===key ? "primary" : ""} onClick={() => setTab(key)}>{label}</button>)}</nav>
+    <nav className="queue-tabs" aria-label="Разделы панели">{[["queue","Очередь"],["schedule","Расписание"],["settings","Дедлайны и порядок"]].map(([key,label]) => <button key={key} disabled={busy} aria-current={tab===key ? "page" : undefined} className={tab===key ? "primary" : ""} onClick={() => setTab(key)}>{label}</button>)}</nav>
     {(error || sessions.error || roster.error) && <p role="alert" className="queue-notice queue-error">{error || sessions.error?.message || roster.error?.message} <button onClick={() => { roster.refresh(); sessions.refresh(); }}>Повторить</button></p>}
-    {busy && <p role="status">Сохраняется…</p>}
+    <div className={`queue-feedback ${busy ? "is-saving" : ""}`} role="status" aria-live="polite" aria-atomic="true"><span className="queue-spinner" aria-hidden="true" />{busy ? "Сохраняется…" : ""}</div>
+    <div className="queue-content" key={tab} aria-busy={busy}>
     {tab === "queue" && <>
       {!sessionId && <p className="queue-notice">Назначьте занятие во вкладке «Расписание».</p>}
       {sessionId && !data && !roster.error && <p role="status">Загружается очередь…</p>}
       {data && <>
-        <h2>{displayDate(data.session.starts_at,data.session.timezone)} · {group}</h2>
-        <p>{data.mode === "random" ? "Случайный порядок" : "Приоритет по дедлайнам, от −1"}. {data.attendance_open ? "Студенты могут менять посещение до начала пары." : "Состав зафиксирован; изменения доступны преподавателю."}</p>
+        <div className="queue-session-heading"><h2>{displayDate(data.session.starts_at,data.session.timezone)} <span className="queue-group-badge">{group}</span></h2>
+        <p>{data.mode === "random" ? "Случайный порядок" : "Приоритет по дедлайнам, от −1"}. {data.attendance_open ? "Студенты могут менять посещение до начала пары." : "Состав зафиксирован; изменения доступны преподавателю."}</p></div>
         {data.stale && <p className="queue-notice">Таблица недоступна. Показан сохранённый состав, обновление допуска ожидается.</p>}
         {Date.now()/1000 < data.session.starts_at && data.session.enrollment_status !== "cancelled" && <button disabled={busy} onClick={() => action({action:data.session.enrollment_status === "closed" ? "open_enrollment" : "close_enrollment"})}>{data.session.enrollment_status === "closed" ? "Открыть запись" : "Закрыть запись досрочно"}</button>}
         <dl className="queue-summary">{[["waiting","Ждут"],["defended","Защитили"],["failed","Не защитили"],["no_show","Не явились"]].map(([key,label]) => <div key={key}><dt>{label}</dt><dd>{data.stats[key]}</dd></div>)}</dl>
-        <button className="primary" disabled={busy || Date.now()/1000 < data.session.starts_at || !data.next_entry_id || Boolean(data.current_entry_id)} onClick={() => action({action:"call_next"})}>Вызвать следующего</button>
-        <div className="queue-table-wrap"><table className="queue-table"><caption className="queue-sr-only">Все участники и результаты выбранного занятия</caption><thead><tr><th>Позиция</th><th>Студент / GitHub</th><th>Работа</th><th>Допущен</th><th>Статус</th><th>Действия</th></tr></thead><tbody>
+        <div className="queue-call-toolbar"><button className="primary queue-call-button" disabled={busy || Date.now()/1000 < data.session.starts_at || !data.next_entry_id || Boolean(data.current_entry_id)} onClick={() => action({action:"call_next"})}>Вызвать следующего</button><span className="queue-muted">{data.current_entry_id ? "Сначала отметьте результат текущей защиты" : data.next_entry_id ? "Следующий студент выделен в списке" : "Нет ожидающих студентов"}</span></div>
+        <div className="queue-table-wrap" role="region" aria-label="Список сдающих" tabIndex={0}><table className="queue-table queue-roster-table"><colgroup><col className="queue-col-position"/><col className="queue-col-student"/><col className="queue-col-lab"/><col className="queue-col-date"/><col className="queue-col-status"/><col className="queue-col-actions"/></colgroup><caption className="queue-sr-only">Все участники и результаты выбранного занятия</caption><thead><tr><th scope="col" aria-label="Позиция">№</th><th>Студент / GitHub</th><th>Работа</th><th>Допущен</th><th>Статус</th><th>Действия</th></tr></thead><tbody ref={rowContainer}>
           {data.entries.map((row,index) => {
             const current = row.attempt?.entry_id === data.current_entry_id, next = row.attempt?.entry_id === data.next_entry_id;
             const active = ["waiting","called"].includes(row.attempt?.status);
-            return <tr key={row.candidate_id} className={`${current ? "current" : next ? "next" : row.state} ${row.attempt?.is_repeat ? "repeat" : ""}`}>
-              <td>{active ? index+1 : row.position ?? "—"}</td><td><strong>{row.full_name}</strong><br/><a href={`https://github.com/${encodeURIComponent(row.github)}`} target="_blank" rel="noreferrer">{row.github}</a></td><td>{row.lab_key}{row.priority != null && <small><br/>Приоритет {row.priority}</small>}</td><td>{displayDate(row.qualified_at,data.session.timezone)}</td><td>{entryLabel(row,{current:data.current_entry_id,next:data.next_entry_id})}</td>
-              <td><div className="queue-actions">{current && [["defended","Сдал"],["failed","Не сдал"],["no_show","Не пришёл"]].map(([outcome,label]) => <button key={outcome} disabled={busy} onClick={() => action({action:"result",entry_id:row.attempt.entry_id,outcome})}>{label}</button>)}
-                {active ? <button disabled={busy} onClick={() => action({action:"withdraw",entry_id:row.attempt.entry_id})}>Убрать</button> : <button disabled={busy || Date.now()/1000 >= data.session.ends_at || data.session.enrollment_status === "cancelled"} onClick={() => action({action:"add_tail",candidate_id:row.candidate_id})}>В конец</button>}
+            return <tr key={row.candidate_id} data-queue-row={row.candidate_id} className={`${current ? "current" : next ? "next" : row.state} ${row.attempt?.is_repeat ? "repeat" : ""}`}>
+              <td>{active ? index+1 : row.position ?? "—"}</td><td><strong>{row.full_name}</strong><br/><a href={`https://github.com/${encodeURIComponent(row.github)}`} target="_blank" rel="noreferrer">{row.github}</a></td><td>{row.lab_key}{row.priority != null && <small><br/>Приоритет {row.priority}</small>}</td><td>{displayDate(row.qualified_at,data.session.timezone)}</td><td><span className={`queue-status ${current ? "is-current" : next ? "is-next" : ""}`}>{entryLabel(row,{current:data.current_entry_id,next:data.next_entry_id})}</span></td>
+              <td><div className="queue-row-actions">{!current && <span className="queue-action-hint">Результат после вызова</span>}{[["defended","Сдал"],["failed","Не сдал"],["no_show","Не пришёл"]].map(([outcome,label]) => <button key={outcome} className={`queue-result ${outcome}`} data-visible={current} aria-hidden={!current} tabIndex={current ? 0 : -1} disabled={busy || !current} onClick={() => action({action:"result",entry_id:row.attempt.entry_id,outcome})}>{label}</button>)}
+                {active ? <button className="queue-manage" disabled={busy} onClick={() => action({action:"withdraw",entry_id:row.attempt.entry_id})}>Убрать</button> : <button className="queue-manage" disabled={busy || Date.now()/1000 >= data.session.ends_at || data.session.enrollment_status === "cancelled"} onClick={() => action({action:"add_tail",candidate_id:row.candidate_id})}>В конец</button>}
               </div></td></tr>;
           })}
         </tbody></table></div>
@@ -79,6 +83,7 @@ export function TeacherQueue({ initialCourse = "" }) {
     </>}
     {tab === "schedule" && <Schedule course={course} group={group} sessions={sessions.data || []} perform={perform} busy={busy} version={settingsVersion} onSaved={() => setSettingsVersion(v => v+1)} />}
     {tab === "settings" && course && <Settings key={`${course}:${group}`} course={course} group={group} perform={perform} busy={busy} />}
+    </div>
   </main>;
 }
 
