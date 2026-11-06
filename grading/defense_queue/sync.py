@@ -81,4 +81,5 @@ def sync_group(store, course_id, group_id, course, grid, *, parse_deadline, now)
                           deadline_at=int(deadline.value.timestamp()) if deadline.value else None,
                           deadline_available=deadline.available, now=now)
             imported += 1
-    return {'students': len(students), 'eligible': imported, 'deadlines_available': all(d.available for d in deadlines.values())}
+    return {'students': len(students), 'eligible': imported, 'deadlines_available': all(d.available for d in deadlines.values()),
+            'deadlines': {key: {'available': d.available, 'value': int(d.value.timestamp()) if d.value else None} for key, d in deadlines.items()}}

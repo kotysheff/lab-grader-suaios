@@ -652,6 +652,7 @@ def get_course(request: Request, course_id: str):
         "email": course_info.get("email", "Unknown"),
         "github-organization": course_info.get("github", {}).get("organization", "Unknown"),
         "google-spreadsheet": course_info.get("google", {}).get("spreadsheet", "Unknown"),
+        "queue_enabled": bool(course_info.get("queue", {}).get("enabled", False)),
         "status": course_info["_meta"]["status"],
         "priority": course_info["_meta"]["priority"],
     }
@@ -1224,7 +1225,7 @@ def _after_grade_queue_sync(course_id, group_id, course, target):
 
 @app.get('/courses/{course_id}/groups/{group_id}/queue')
 @limiter.limit('600/minute')
-def get_defense_queue(request: Request, course_id: str, group_id: str, session_id: str | None = None):
+def get_defense_queue(request: Request, course_id: str, group_id: str, session_id: str | None = None, preview_lab: str | None = None):
     import time
     from grading.defense_queue.runtime import queue_view
     course = get_course_by_id(course_id)
@@ -1236,6 +1237,19 @@ def get_defense_queue(request: Request, course_id: str, group_id: str, session_i
                             deadlines_available=summary['deadlines_available'],
                             now=int(time.time()), session_id=session_id)
         result['stale'] = summary.get('stale', False)
+        if preview_lab and result.get('session') and result['mode'] == 'priority':
+            resolved = find_visible_lab_config(course, preview_lab)
+            if resolved:
+                from grading.defense_queue.policy import priority_for
+                from grading.defense_queue.sync import course_timezone
+                from datetime import date, timezone
+                value = summary.get('deadlines', {}).get(resolved[0])
+                if value and value['available']:
+                    rank = None if value['value'] is None else priority_for(
+                        datetime.fromtimestamp(value['value'], timezone.utc), datetime.fromtimestamp(result['session']['starts_at'], timezone.utc),
+                        week_anchor=date.fromisoformat(course.get('queue', {}).get('semester_week_anchor', '1970-01-05')), timezone=course_timezone(course))
+                    position = 1 + sum(row['will_attend'] and (rank is None or row.get('priority') is not None and row['priority'] <= rank) for row in result['entries'])
+                    result['preview'] = {'position': position, 'lab_key': resolved[0], 'priority': rank}
         return result
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error))

@@ -1,0 +1,49 @@
+.queue-surface { color: #181818; font-family: "Source Code Pro", monospace; font-size: 14px; line-height: 1.5; min-width: 0; text-align: left; }
+.queue-surface * { box-sizing: border-box; }
+.queue-surface h2 { font-size: 21px; line-height: 1.3; margin: 0 0 12px; font-weight: 600; }
+.queue-surface h3 { font-size: 16px; margin: 24px 0 10px; }
+.queue-surface p { margin: 8px 0 16px; max-width: 72ch; }
+.queue-surface small, .queue-muted { color: #626262; }
+.queue-surface input, .queue-surface select, .queue-surface textarea { font: inherit; border: 1px solid #a0a0a0; background: white; color: #181818; padding: 9px 10px; border-radius: 6px; max-width: 100%; min-width: 0; }
+.queue-surface input[type=checkbox] { min-width: auto; }
+.queue-surface label { display: grid; gap: 6px; }
+.queue-surface button, .queue-tabs button { font: inherit; border: 1px solid #777; border-radius: 6px; background: #fff; color: #242424; padding: 8px 12px; cursor: pointer; min-height: 38px; }
+.queue-surface button:hover:not(:disabled) { background: #f0f1f2; }
+.queue-surface button.primary, .queue-tabs button[aria-selected=true] { background: #303036; color: white; border-color: #303036; }
+.queue-surface button[aria-pressed=true] { border-color: #247456; background: #e7f6ed; color: #154a35; }
+.queue-surface button:disabled, .queue-tabs button:disabled { opacity: .55; cursor: default; }
+.queue-surface :focus-visible, .queue-tabs :focus-visible { outline: 3px solid #317461; outline-offset: 3px; }
+.queue-surface a { color: #245d89; text-underline-offset: 3px; }
+.queue-surface ::selection { background: #cbe8dc; }
+.queue-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; font-size: 14px; }
+.queue-toolbar { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; margin: 16px 0; }
+.queue-notice { padding: 10px 12px; border-left: 3px solid #8495a4; background: #f2f5f7; margin: 12px 0; }
+.queue-error { border-color: #a13c3c; color: #7c2626; background: #fff0ed; }
+.queue-list { padding: 0; list-style: none; margin: 16px 0; }
+.queue-row { display: grid; grid-template-columns: 28px minmax(0,1fr) auto; gap: 10px; padding: 12px 6px; border-bottom: 1px solid #e2e2e2; align-items: start; overflow-wrap: anywhere; }
+.queue-row small { display: block; margin-top: 3px; }
+.queue-row.unconfirmed .queue-name { opacity: .65; }
+.queue-row.declined .queue-name { text-decoration: line-through; color: #666; }
+.queue-row.mine { background: #edf6f2; }
+.queue-preview { border: 1px dashed #597969; animation: queue-check 1.5s ease-in-out infinite; }
+.queue-rank { font-variant-numeric: tabular-nums; color: #555; }
+.queue-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.queue-admin { width: min(1240px, 100%); margin: 0 auto; padding: 24px; background: #fff; min-height: 100vh; }
+.queue-table-wrap { overflow-x: auto; }
+.queue-table { width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; }
+.queue-table th, .queue-table td { padding: 12px 10px; border-bottom: 1px solid #dedede; vertical-align: top; }
+.queue-table th { color: #555; font-weight: 500; white-space: nowrap; }
+.queue-table tr.current { background: #e7f6ed; }
+.queue-table tr.next { background: #fff5d9; }
+.queue-table tr.repeat td { font-style: italic; border-bottom-style: dashed; }
+.queue-table button { font-size: 12px; padding: 6px 8px; min-height: 34px; }
+.queue-summary { display: flex; flex-wrap: wrap; gap: 20px; margin: 18px 0; }
+.queue-summary div { display: flex; gap: 8px; }
+.queue-summary dt { color: #626262; }
+.queue-summary dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+.queue-settings { display: grid; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); gap: 14px; margin-bottom: 16px; }
+.queue-history { padding-left: 20px; font-size: 12px; }
+.queue-history li { margin: 8px 0; }
+@keyframes queue-check { 50% { background-color: #e6eee9; } }
+@media(prefers-reduced-motion:reduce) { .queue-preview { animation: none; } }
+@media(max-width:600px) { .queue-admin { padding: 16px; } .queue-row { grid-template-columns: 24px minmax(0,1fr); } .queue-row > :last-child { grid-column: 2; } }

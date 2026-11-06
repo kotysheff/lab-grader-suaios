@@ -1,5 +1,6 @@
 """Подключение очереди к приложению; Sheets-клиент передаёт main.py."""
 from datetime import date, datetime, timezone
+from zoneinfo import ZoneInfo
 from functools import lru_cache
 import os
 import json
@@ -121,7 +122,7 @@ def queue_view(store, course_id, group_id, course, *, deadlines_available, now, 
             position += 1
         entries.append({'candidate_id': row['candidate_id'], 'full_name': row['full_name'],
                         'github': row['github_login'], 'lab_key': row['lab_key'],
-                        'qualified_at': row['qualified_at'], 'will_attend': bool(row['will_attend']),
+                        'qualified_at': row['qualified_at'], 'priority': None if candidate.deadline is None else max(-1, (candidate.deadline.astimezone(ZoneInfo(zone)).date() - anchor).days // 7 - (datetime.fromtimestamp(session['starts_at'], ZoneInfo(zone)).date() - anchor).days // 7), 'will_attend': bool(row['will_attend']),
                         'answered': bool(row['attendance_answered']),
                         'position': position if row['will_attend'] else None,
                         'state': 'attending' if row['will_attend'] else 'declined' if row['attendance_answered'] else 'unconfirmed'})
