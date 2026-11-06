@@ -1137,6 +1137,7 @@ def grade_lab(request: Request, course_id: str, group_id: str, lab_id: str, grad
             }
 
         if outcome.status == "rejected":
+            _after_grade_queue_sync(course_id, group_id, course_info, target)
             response = {
                 "status": "rejected",
                 "result": outcome.current_grade,
@@ -1153,6 +1154,7 @@ def grade_lab(request: Request, course_id: str, group_id: str, lab_id: str, grad
         logger.info(f"Updating cell at row {target['row']}, column {target['col']} with result '{outcome.cell_value}'")
         target["sheet"].update_cell(target["row"], target["col"], outcome.cell_value)
         logger.info(f"Successfully updated grade for '{username}' in lab {lab_id}")
+        _after_grade_queue_sync(course_id, group_id, course_info, target)
 
         response = {
             "status": "updated",
@@ -1181,6 +1183,135 @@ def grade_lab(request: Request, course_id: str, group_id: str, lab_id: str, grad
         logger.exception(f"Unexpected error during grading: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Внутренняя ошибка сервера: {str(e)}")
 
+
+
+# Очередь защиты: включается для курса через queue.enabled.
+def _sync_defense_queue(course_id, group_id, course, *, sheet=None, force=False):
+    from grading.defense_queue.runtime import sync_queue
+    from grading.sheets_client import parse_deadline
+    public_course = dict(course)
+    public_course['labs'] = {key: lab for key, lab in course.get('labs', {}).items()
+                             if find_visible_lab_config(course, str(key))}
+    queue_config = dict(course.get('queue', {}))
+    if 'required_labs' in queue_config:
+        queue_config['required_labs'] = [key for key in queue_config['required_labs']
+                                        if str(key) in public_course['labs']]
+    public_course['queue'] = queue_config
+
+    def fetch_grid():
+        target = sheet
+        if target is None:
+            spreadsheet_id = course.get('google', {}).get('spreadsheet')
+            if not spreadsheet_id:
+                raise ValueError('Для курса не задана Google-таблица')
+            target = sheets_client().open_by_key(spreadsheet_id).worksheet(group_id)
+        return target.get_all_values()
+
+    return sync_queue(course_id, group_id, public_course, fetch_grid=fetch_grid,
+                      parse_deadline=lambda value: parse_deadline(value, course.get('timezone')),
+                      force=force)
+
+
+def _after_grade_queue_sync(course_id, group_id, course, target):
+    if not course.get('queue', {}).get('enabled', False):
+        return
+    try:
+        _sync_defense_queue(course_id, group_id, course, sheet=target.get('sheet'), force=True)
+    except Exception:
+        # Ошибка очереди не отменяет уже сохранённый результат проверки.
+        logger.exception('Queue sync pending for %s/%s', course_id, group_id)
+
+
+@app.get('/courses/{course_id}/groups/{group_id}/queue')
+@limiter.limit('600/minute')
+def get_defense_queue(request: Request, course_id: str, group_id: str, session_id: str | None = None):
+    import time
+    from grading.defense_queue.runtime import queue_view
+    course = get_course_by_id(course_id)
+    if not course.get('queue', {}).get('enabled', False):
+        raise HTTPException(status_code=404, detail='Очередь для курса не включена')
+    try:
+        store, summary = _sync_defense_queue(course_id, group_id, course)
+        result = queue_view(store, course_id, group_id, course,
+                            deadlines_available=summary['deadlines_available'],
+                            now=int(time.time()), session_id=session_id)
+        result['stale'] = summary.get('stale', False)
+        return result
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error))
+    except Exception:
+        logger.exception('Failed to read defense queue')
+        raise HTTPException(status_code=502, detail='Не удалось обновить очередь. Повторите позже')
+
+
+class QueueAttendanceRequest(StudentRegistration):
+    session_id: str = Field(..., min_length=1)
+    will_attend: bool
+
+
+@app.post('/courses/{course_id}/groups/{group_id}/queue/attendance')
+@limiter.limit('60/minute')
+def set_queue_attendance(request: Request, course_id: str, group_id: str, data: QueueAttendanceRequest):
+    import time
+    from grading.defense_queue.storage import QueueClosed
+    course = get_course_by_id(course_id)
+    if not course.get('queue', {}).get('enabled', False):
+        raise HTTPException(status_code=404, detail='Очередь для курса не включена')
+    try:
+        store, summary = _sync_defense_queue(course_id, group_id, course)
+        if summary.get('stale'):
+            raise HTTPException(status_code=503, detail='Допуск не удалось обновить. Повторите позже')
+        full_name = f'{data.surname} {data.name} {data.patronymic}'.strip()
+        with store.connection() as con:
+            candidate = con.execute("""SELECT c.candidate_id,s.full_name FROM queue_candidates c
+                JOIN students s USING(student_id) WHERE c.course_id=? AND c.group_id=?
+                AND c.status='eligible' AND s.github_login=? COLLATE NOCASE""",
+                (course_id, group_id, data.github.strip())).fetchone()
+        if candidate is None or candidate['full_name'] != full_name:
+            raise HTTPException(status_code=403, detail='Допущенная работа с указанными ФИО и GitHub не найдена')
+        store.attendance(data.session_id, candidate['candidate_id'], data.will_attend, now=int(time.time()))
+        return {'status': 'updated', 'session_id': data.session_id, 'will_attend': data.will_attend}
+    except HTTPException:
+        raise
+    except QueueClosed as error:
+        raise HTTPException(status_code=409, detail=str(error))
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error))
+    except Exception:
+        logger.exception('Failed to update attendance')
+        raise HTTPException(status_code=502, detail='Не удалось сохранить посещение. Повторите позже')
+
+
+class QueueSessionRequest(BaseModel):
+    session_id: str = Field(..., min_length=1, max_length=128)
+    teacher_key: str = Field(..., min_length=1)
+    starts_at: datetime
+    ends_at: datetime
+
+
+@app.post('/admin/courses/{course_id}/groups/{group_id}/queue/sessions')
+def create_queue_session(request: Request, course_id: str, group_id: str,
+                         data: QueueSessionRequest, admin: str = Depends(require_admin)):
+    import time
+    from grading.defense_queue.sync import course_timezone
+    from zoneinfo import ZoneInfo
+    course = get_course_by_id(course_id)
+    if not course.get('queue', {}).get('enabled', False):
+        raise HTTPException(status_code=404, detail='Очередь для курса не включена')
+    if data.starts_at.utcoffset() is None or data.ends_at.utcoffset() is None or data.ends_at <= data.starts_at:
+        raise HTTPException(status_code=422, detail='Нужен корректный интервал с часовым поясом')
+    try:
+        store, _ = _sync_defense_queue(course_id, group_id, course)
+        store.create_session(data.session_id, course_id, group_id, data.teacher_key,
+                             starts_at=int(data.starts_at.timestamp()), ends_at=int(data.ends_at.timestamp()),
+                             local_date=data.starts_at.astimezone(ZoneInfo(course_timezone(course))).date().isoformat(),
+                             now=int(time.time()))
+        return {'status': 'created', 'session_id': data.session_id}
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error))
+    except Exception:
+        logger.exception('Failed to create queue session')
+        raise HTTPException(status_code=409, detail='Не удалось создать занятие. Проверьте идентификатор и данные')
 
 
 # ---------------------------------------------------------------------------
