@@ -18,6 +18,7 @@ export function TeacherQueue({ initialCourse = "" }) {
   const path = course && group ? queueGroupPath(course, group, true) : null;
   const roster = usePolling(path && sessionId ? `${path}?session_id=${encodeURIComponent(sessionId)}` : null);
   const [settingsVersion, setSettingsVersion] = useState(0);
+  const [manualCandidate, setManualCandidate] = useState("");
   useEffect(() => { let alive = true; fetchCourses("all").then(rows => { if (alive) { setCourses(rows); setCourse(value => value || rows[0]?.id || ""); } }).catch(err => setError(err.message)); return () => { alive = false; }; }, []);
   useEffect(() => {
     let alive = true; setGroups([]); setGroup(""); setSessionId("");
@@ -61,7 +62,7 @@ export function TeacherQueue({ initialCourse = "" }) {
         <p>{data.mode === "random" ? "Случайный порядок" : "Приоритет по дедлайнам, от −1"}. {data.attendance_open ? "Студенты могут менять посещение до начала пары." : "Состав зафиксирован; изменения доступны преподавателю."}</p></div>
         {data.stale && <p className="queue-notice">Таблица недоступна. Показан сохранённый состав, обновление допуска ожидается.</p>}
         {Date.now()/1000 < data.session.starts_at && data.session.enrollment_status !== "cancelled" && <button disabled={busy} onClick={() => action({action:data.session.enrollment_status === "closed" ? "open_enrollment" : "close_enrollment"})}>{data.session.enrollment_status === "closed" ? "Открыть запись" : "Закрыть запись досрочно"}</button>}
-        <dl className="queue-summary">{[["waiting","Ждут"],["defended","Защитили"],["failed","Не защитили"],["no_show","Не явились"]].map(([key,label]) => <div key={key}><dt>{label}</dt><dd>{data.stats[key]}</dd></div>)}</dl>
+        <dl className="queue-summary">{[["waiting","Ждут"],["defended","Сдано"],["failed","Неудачных попыток"],["no_show","Неявок"]].map(([key,label]) => <div key={key}><dt>{label}</dt><dd>{data.stats[key]}</dd></div>)}</dl>
         <div className="queue-call-toolbar"><button className="primary queue-call-button" disabled={busy || Date.now()/1000 < data.session.starts_at || !data.next_entry_id || Boolean(data.current_entry_id)} onClick={() => action({action:"call_next"})}>Вызвать следующего</button><span className="queue-muted">{data.current_entry_id ? "Сначала отметьте результат текущей защиты" : data.next_entry_id ? "Следующий студент выделен в списке" : "Нет ожидающих студентов"}</span></div>
         <div className="queue-table-wrap" role="region" aria-label="Список сдающих" tabIndex={0}><table className="queue-table queue-roster-table"><colgroup><col className="queue-col-position"/><col className="queue-col-student"/><col className="queue-col-lab"/><col className="queue-col-date"/><col className="queue-col-status"/><col className="queue-col-actions"/></colgroup><caption className="queue-sr-only">Все участники и результаты выбранного занятия</caption><thead><tr><th scope="col" aria-label="Позиция">№</th><th>Студент / GitHub</th><th>Работа</th><th>Допущен</th><th>Статус</th><th>Действия</th></tr></thead><tbody ref={rowContainer}>
           {data.entries.map((row,index) => {
@@ -75,6 +76,12 @@ export function TeacherQueue({ initialCourse = "" }) {
           })}
         </tbody></table></div>
         {!data.entries.length && <p>Участников пока нет.</p>}
+        <details><summary>Добавить допущенного студента в конец</summary>
+          <form className="queue-toolbar" onSubmit={e => {e.preventDefault();action({action:"add_tail",candidate_id:Number(manualCandidate)});}}>
+            <label>Студент<select required value={manualCandidate} onChange={e=>setManualCandidate(e.target.value)}><option value="">Выберите студента</option>{(data.available_candidates || []).map(row=><option key={row.candidate_id} value={row.candidate_id}>{row.full_name} · работа {row.lab_key}</option>)}</select></label>
+            <button disabled={busy || !data.available_candidates?.some(row=>String(row.candidate_id)===manualCandidate) || Date.now()/1000>=data.session.ends_at || data.session.enrollment_status==="cancelled"}>Добавить в конец</button>
+          </form>
+        </details>
         <details><summary>История и попытки</summary>
           <ul className="queue-history">{data.history.map(e => <li key={e.event_id}>{displayDate(e.occurred_at,data.session.timezone)} · {eventNames[e.kind] || e.kind}{e.full_name ? ` · ${e.full_name} · работа ${e.lab_key}` : ""}{e.entry_id ? ` · попытка ${e.entry_id}` : ""}</li>)}</ul>
           <p>Сверка с таблицей: {data.reconciliation?.done_at ? displayDate(data.reconciliation.done_at,data.session.timezone) : data.reconciliation?.error ? "ожидается повтор после ошибки чтения" : "через 10 минут после окончания"}.</p>

@@ -88,6 +88,10 @@ def teacher_view(store, course_id, group_id, course, *, deadlines_available, now
         attempts = [dict(row) for row in con.execute('SELECT * FROM queue_entries WHERE session_id=? ORDER BY entry_id', (session_id,))]
         events = [dict(row) for row in con.execute('SELECT e.*,s.full_name,c.lab_key FROM queue_events e LEFT JOIN queue_candidates c USING(candidate_id) LEFT JOIN students s ON s.student_id=c.student_id WHERE e.session_id=? ORDER BY e.event_id DESC LIMIT 200', (session_id,))]
         sync = con.execute('SELECT * FROM queue_reconciliations WHERE session_id=?', (session_id,)).fetchone()
+        available_candidates = [dict(row) for row in con.execute("""SELECT c.candidate_id,c.lab_key,s.full_name FROM queue_candidates c JOIN students s USING(student_id)
+            WHERE c.course_id=? AND c.group_id=? AND c.status='eligible' AND NOT EXISTS
+            (SELECT 1 FROM queue_entries e WHERE e.course_id=c.course_id AND e.student_id=c.student_id AND e.status IN ('waiting','called'))
+            ORDER BY c.qualified_at,c.candidate_id""",(course_id,group_id))]
     latest = {row['candidate_id']: row for row in attempts}
     known = {row['candidate_id'] for row in view['entries']}
     entries = []
@@ -105,7 +109,7 @@ def teacher_view(store, course_id, group_id, course, *, deadlines_available, now
     called = next((row for row in active if row['status'] == 'called'), None)
     active_order = {row['candidate_id']: index for index, row in enumerate(active)}
     entries.sort(key=lambda row: (0, active_order[row['candidate_id']]) if row['candidate_id'] in active_order else (1, row['qualified_at']))
-    return dict(view, entries=entries, attempts=attempts, history=events,
+    return dict(view, entries=entries, attempts=attempts, history=events, available_candidates=available_candidates,
                 current_entry_id=called['entry_id'] if called else None,
                 next_entry_id=waiting[0]['entry_id'] if waiting else None,
                 stats={status: sum(row['status'] == status for row in attempts)

@@ -159,7 +159,7 @@ def _start_background_job(func, *args, name: str) -> None:
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 ADMIN_LOGIN = os.getenv("ADMIN_LOGIN")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
-SECRET_KEY = os.getenv("SECRET_KEY", "super-secret-key")
+SECRET_KEY = os.getenv("SECRET_KEY")
 
 # GitHub OAuth App for the /join student repo creation flow (see docs/REPO_GENERATION_PLAN.md).
 # Optional: existing deployments that don't use this feature can leave these unset;
@@ -202,6 +202,9 @@ if not ADMIN_LOGIN or not ADMIN_PASSWORD:
         "Приложение не может быть запущено без корректной конфигурации безопасности."
     )
 
+if not SECRET_KEY or SECRET_KEY == "super-secret-key":
+    raise RuntimeError("Задайте собственный SECRET_KEY: публичный ключ по умолчанию небезопасен")
+
 if not GITHUB_TOKEN:
     raise RuntimeError(
         "GITHUB_TOKEN должен быть установлен в переменных окружения. "
@@ -209,7 +212,11 @@ if not GITHUB_TOKEN:
     )
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Разрешить запросы с любых источников
+    allow_origins=list(dict.fromkeys(value.rstrip('/') for value in (
+        FRONTEND_URL, PUBLIC_BASE_URL,
+        'http://localhost:5173', 'http://localhost:8080',
+        'http://127.0.0.1:5173', 'http://127.0.0.1:8080',
+    ) if value)),  # Cookie преподавателя доступны только согласованным frontend-origin.
     allow_credentials=True,
     allow_methods=["*"],  # Разрешить все HTTP-методы
     allow_headers=["*"],  # Разрешить все заголовки
@@ -422,7 +429,8 @@ def admin_login(request: Request, data: AuthRequest, response: Response):
             httponly=True,
             max_age=3600,
             path="/",
-            secure=False
+            secure=request.url.scheme == "https",
+            samesite="lax"
         )
         return {"authenticated": True}
     raise HTTPException(status_code=401, detail="Неверный логин или пароль")

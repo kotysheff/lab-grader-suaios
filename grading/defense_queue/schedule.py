@@ -88,20 +88,53 @@ def parse_suai(html):
     return lessons
 
 
+def normalize_lessons(lessons):
+    if not isinstance(lessons,list) or len(lessons)>500:
+        raise ValueError('Нужен массив не более 500 занятий')
+    result=[]
+    for row in lessons:
+        if not isinstance(row,dict): raise ValueError('Каждое занятие должно быть объектом')
+        key=row.get('key');teacher=row.get('teacher_key','main');kind=row.get('source_kind','university')
+        if not isinstance(key,str) or not key.strip() or len(key)>512: raise ValueError('Нужен непустой строковый key занятия')
+        if not isinstance(teacher,str) or not teacher.strip() or len(teacher)>128: raise ValueError('Нужен ключ преподавателя')
+        if kind not in ('university','manual','extra'): raise ValueError('Неизвестный тип занятия')
+        def stamp(value):
+            try:
+                if isinstance(value,bool): raise ValueError()
+                if isinstance(value,(int,float)): number=int(value)
+                else:
+                    dt=datetime.fromisoformat(value)
+                    if dt.utcoffset() is None: raise ValueError()
+                    number=int(dt.timestamp())
+                datetime.fromtimestamp(number,ZoneInfo('UTC'))
+                return number
+            except (ValueError,TypeError,OverflowError,OSError):
+                raise ValueError('Нужна корректная дата с часовым поясом или Unix-время') from None
+        start,end=stamp(row.get('starts_at')),stamp(row.get('ends_at'))
+        if start>=end: raise ValueError('Окончание должно быть позже начала')
+        result.append(dict(key=key,teacher_key=teacher,source_kind=kind,starts_at=start,ends_at=end))
+    if len({r['key'] for r in result})!=len(result): raise ValueError('Повторяющийся ключ занятия')
+    return result
+
+
 def validate_schedule(config):
     if not isinstance(config, dict): raise ValueError('Расписание должно быть объектом')
     if config.get('source', 'manual') not in ('manual', 'suai', 'import'):
         raise ValueError('Источник: manual, suai или import')
     if config.get('source') == 'suai':
-        if not str(config.get('group_id', '')).isdigit(): raise ValueError('Нужен числовой ID группы на сайте ГУАП')
-        if not config.get('subject', '').strip(): raise ValueError('Нужно точное название предмета')
+        if not re.fullmatch(r'[0-9]{1,20}', str(config.get('group_id', ''))): raise ValueError('Нужен числовой ID группы на сайте ГУАП')
+        if not isinstance(config.get('subject'),str) or not config['subject'].strip(): raise ValueError('Нужно точное название предмета')
         try: anchor = date.fromisoformat(config.get('week_anchor', ''))
         except (TypeError,ValueError): raise ValueError('Нужна дата начала нечётной недели') from None
         if anchor.weekday() != 0: raise ValueError('Начало первой нечётной недели должно быть понедельником')
     if not isinstance(config.get('lessons', []), list): raise ValueError('lessons должен быть массивом')
     if len(config.get('lessons', [])) > 500: raise ValueError('В одном импорте допускается до 500 занятий')
     if config.get('semester_end'):
-        date.fromisoformat(config['semester_end'])
+        try: date.fromisoformat(config['semester_end'])
+        except (TypeError,ValueError): raise ValueError('Нужна дата конца семестра') from None
+    for field in ('kind','teacher_id','teacher_key','university'):
+        if field in config and not isinstance(config[field],str): raise ValueError(f'{field}: нужна строка')
+    normalize_lessons(config.get('lessons',[]))
     return config
 
 
@@ -140,20 +173,10 @@ def import_sessions(store, course_id, group_id, course, lessons, *, now):
     """Стабильные ключи; ручные переносы/отмены (revision>1) важнее обновления источника."""
     zone = course_timezone(course)
     prepared = []
-    for lesson in lessons:
-        start, end = lesson['starts_at'], lesson['ends_at']
-        def stamp(value):
-            if isinstance(value, (int, float)): return int(value)
-            dt = datetime.fromisoformat(value)
-            if dt.utcoffset() is None: raise ValueError('Даты импорта должны содержать часовой пояс')
-            return int(dt.timestamp())
-        start, end = stamp(start), stamp(end)
-        if start >= end: raise ValueError('Окончание раньше начала')
-        key = str(lesson['key'])
+    for lesson in normalize_lessons(lessons):
+        start,end,key=lesson['starts_at'],lesson['ends_at'],lesson['key']
         sid = 'schedule-' + hashlib.sha256(f'{course_id}\n{group_id}\n{key}'.encode()).hexdigest()[:32]
-        kind = lesson.get('source_kind', 'university')
-        if kind not in ('university', 'manual', 'extra'): raise ValueError('Неизвестный тип занятия')
-        prepared.append((sid, key, start, end, str(lesson.get('teacher_key', 'main')), kind))
+        prepared.append((sid,key,start,end,lesson['teacher_key'],lesson['source_kind']))
     if len({r[1] for r in prepared}) != len(prepared): raise ValueError('Повторяющийся ключ занятия')
     store.configure_group(course_id, group_id, title=course.get('name', course_id), timezone=zone)
     with store.transaction() as con:
