@@ -1315,7 +1315,9 @@ def create_queue_session(request: Request, course_id: str, group_id: str,
     if data.starts_at.utcoffset() is None or data.ends_at.utcoffset() is None or data.ends_at <= data.starts_at:
         raise HTTPException(status_code=422, detail='Нужен корректный интервал с часовым поясом')
     try:
-        store, _ = _sync_defense_queue(course_id, group_id, course)
+        from grading.defense_queue.runtime import queue_store
+        store = queue_store()
+        store.configure_group(course_id, group_id, title=course.get('name', course_id), timezone=course_timezone(course))
         store.create_session(data.session_id, course_id, group_id, data.teacher_key,
                              starts_at=int(data.starts_at.timestamp()), ends_at=int(data.ends_at.timestamp()),
                              local_date=data.starts_at.astimezone(ZoneInfo(course_timezone(course))).date().isoformat(),
@@ -1495,6 +1497,67 @@ def edit_queue_session(request: Request, course_id: str, group_id: str, session_
         return {'status': 'updated'}
     except Exception as error:
         _queue_error(error)
+
+
+class QueueScheduleRequest(BaseModel):
+    config: dict = Field(default_factory=dict)
+
+
+@app.put('/admin/courses/{course_id}/groups/{group_id}/queue/schedule')
+def set_queue_schedule(request: Request, course_id: str, group_id: str, data: QueueScheduleRequest,
+                       admin: str = Depends(require_admin)):
+    import time
+    from grading.defense_queue.operations import save_schedule
+    from grading.defense_queue.sync import course_timezone
+    try:
+        store, course, _ = _queue_admin_context(course_id)
+        store.configure_group(course_id, group_id, title=course.get('name', course_id), timezone=course_timezone(course))
+        save_schedule(store, course_id, group_id, data.config, now=int(time.time()))
+        return {'status': 'updated'}
+    except Exception as error:
+        _queue_error(error)
+
+
+def _fetch_queue_schedule(url):
+    import requests
+    response = requests.get(url, timeout=20)
+    response.raise_for_status()
+    return response.text
+
+
+@app.post('/admin/courses/{course_id}/groups/{group_id}/queue/schedule/refresh')
+def refresh_queue_schedule(request: Request, course_id: str, group_id: str,
+                           admin: str = Depends(require_admin)):
+    import time
+    from grading.defense_queue.schedule import refresh_schedule
+    try:
+        store, course, _ = _queue_admin_context(course_id)
+        count = refresh_schedule(store, course_id, group_id, course, fetch=_fetch_queue_schedule, now=int(time.time()))
+        return {'status': 'updated', 'sessions': count}
+    except Exception as error:
+        _queue_error(error)
+
+
+_queue_worker = None
+
+@app.on_event('startup')
+def start_defense_queue_worker():
+    global _queue_worker
+    if os.getenv('QUEUE_WORKER_ENABLED', '1') == '0':
+        return
+    from grading.defense_queue.runtime import queue_store
+    from grading.defense_queue.worker import QueueWorker
+    # База создаётся только при включении функции хотя бы у одного курса.
+    if not any(course.get('queue', {}).get('enabled') for _, course in iter_course_configs()):
+        return
+    _queue_worker = QueueWorker(queue_store(), iter_course_configs, _sync_defense_queue, _fetch_queue_schedule)
+    _queue_worker.start()
+
+
+@app.on_event('shutdown')
+def stop_defense_queue_worker():
+    if _queue_worker:
+        _queue_worker.stop()
 
 
 # ---------------------------------------------------------------------------

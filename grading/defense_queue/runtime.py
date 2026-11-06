@@ -1,6 +1,5 @@
 """Подключение очереди к приложению; Sheets-клиент передаёт main.py."""
 from datetime import date, datetime, timezone
-from zoneinfo import ZoneInfo
 from functools import lru_cache
 import os
 import json
@@ -8,7 +7,7 @@ import secrets
 import threading
 import time
 
-from .policy import CandidateOrder, order_candidates, resolve_mode
+from .policy import CandidateOrder, order_candidates, resolve_mode, priority_for
 from .storage import QueueStore
 from .sync import course_timezone, sync_group
 
@@ -52,9 +51,15 @@ def sync_queue(course_id, group_id, course, *, fetch_grid, parse_deadline, force
         except Exception:
             if cached:
                 return store, dict(cached[1], stale=True)
+            with store.connection() as con:
+                saved = con.execute('SELECT summary_json FROM queue_sync_state WHERE course_id=? AND group_id=?', (course_id,group_id)).fetchone()
+            if saved:
+                return store, dict(json.loads(saved[0]), stale=True)
             raise
         result = sync_group(store, course_id, group_id, course, grid,
                             parse_deadline=parse_deadline, now=int(time.time()))
+        with store.transaction() as con:
+            con.execute('INSERT INTO queue_sync_state(course_id,group_id,summary_json,checked_at) VALUES (?,?,?,?) ON CONFLICT(course_id,group_id) DO UPDATE SET summary_json=excluded.summary_json,checked_at=excluded.checked_at', (course_id,group_id,json.dumps(result),int(time.time())))
         _CACHE[key] = (time.monotonic(), result)
         return store, result
 
@@ -122,7 +127,7 @@ def queue_view(store, course_id, group_id, course, *, deadlines_available, now, 
             position += 1
         entries.append({'candidate_id': row['candidate_id'], 'full_name': row['full_name'],
                         'github': row['github_login'], 'lab_key': row['lab_key'],
-                        'qualified_at': row['qualified_at'], 'priority': None if candidate.deadline is None else max(-1, (candidate.deadline.astimezone(ZoneInfo(zone)).date() - anchor).days // 7 - (datetime.fromtimestamp(session['starts_at'], ZoneInfo(zone)).date() - anchor).days // 7), 'will_attend': bool(row['will_attend']),
+                        'qualified_at': row['qualified_at'], 'priority': None if candidate.deadline is None else priority_for(candidate.deadline, datetime.fromtimestamp(session['starts_at'], timezone.utc), week_anchor=anchor, timezone=zone), 'will_attend': bool(row['will_attend']),
                         'answered': bool(row['attendance_answered']),
                         'position': position if row['will_attend'] else None,
                         'state': 'attending' if row['will_attend'] else 'declined' if row['attendance_answered'] else 'unconfirmed'})

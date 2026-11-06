@@ -20,6 +20,7 @@ def effective_course(store, course_id, course):
         settings = con.execute('SELECT * FROM queue_settings WHERE course_id=?', (course_id,)).fetchone()
     if settings:
         result['queue']['random'] = bool(settings['random_override'])
+        result['queue']['schedule'] = dict(result['queue'].get('schedule', {}), **json.loads(settings['schedule_json']))
         result['queue']['deadlines'] = dict(result['queue'].get('deadlines', {}), **json.loads(settings['deadlines_json']))
     return result
 
@@ -55,6 +56,10 @@ def materialize(store, view, course, *, now):
             if not row['will_attend']:
                 continue
             candidate = con.execute('SELECT * FROM queue_candidates WHERE candidate_id=?', (row['candidate_id'],)).fetchone()
+            if con.execute("SELECT 1 FROM queue_entries WHERE candidate_id=? AND session_id=?", (candidate['candidate_id'], session['session_id'])).fetchone():
+                continue
+            if con.execute("SELECT 1 FROM queue_entries WHERE course_id=? AND student_id=? AND session_id!=? AND status IN ('waiting','called')", (session['course_id'], candidate['student_id'], session['session_id'])).fetchone():
+                continue
             rank = None
             if candidate['deadline_at'] is not None and candidate['deadline_available']:
                 rank = priority_for(datetime.fromtimestamp(candidate['deadline_at'], timezone.utc),
@@ -197,3 +202,13 @@ def cancel_session(store, session_id, *, now, actor):
         con.execute("UPDATE sessions SET enrollment_status='cancelled',schedule_revision=schedule_revision+1 WHERE session_id=?", (session_id,))
         con.execute("UPDATE queue_entries SET status='expired',closed_at=? WHERE session_id=? AND status IN ('waiting','called')", (now, session_id))
         _event(con, session_id, 'cancelled', now, actor=actor)
+
+
+def save_schedule(store, course_id, group_id, config, *, now):
+    from .schedule import validate_schedule
+    validate_schedule(config)
+    with store.transaction() as con:
+        row = con.execute('SELECT schedule_json FROM queue_settings WHERE course_id=?', (course_id,)).fetchone()
+        configs = json.loads(row[0]) if row else {}
+        configs[group_id] = config
+        con.execute("INSERT INTO queue_settings(course_id,schedule_json,updated_at) VALUES (?,?,?) ON CONFLICT(course_id) DO UPDATE SET schedule_json=excluded.schedule_json,updated_at=excluded.updated_at", (course_id, json.dumps(configs, ensure_ascii=False), now))
