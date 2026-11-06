@@ -147,6 +147,7 @@ npm run build
 |---|---|
 | [DEVELOPMENT](docs/DEVELOPMENT.md) | Локальное окружение и собственные интеграции |
 | [RUNBOOK](docs/queue/RUNBOOK.md) | Демо, настройка очереди, хранение и восстановление |
+| [Аудит и готовность](docs/queue/AUDIT-2026-11-07.md) | Проверки, исправления и расхождения с требованиями |
 | [API](docs/queue/API.md) | Маршруты и форматы запросов очереди |
 | [COURSE CONFIG](docs/COURSE_CONFIG.md) | Конфигурация курса |
 | [DEPLOYMENT](docs/DEPLOYMENT.md) | Развёртывание сервиса |

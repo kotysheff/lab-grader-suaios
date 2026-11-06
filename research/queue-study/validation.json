@@ -5,16 +5,16 @@
   "total_runs": 860000,
   "finalist_student_outcomes": 24300000,
   "scenario_count": 24,
-  "local_links_checked": 111,
+  "local_links_checked": 119,
   "sqlite_version": "3.53.1",
   "checks": [
     {
       "test": "research/queue-study/test_study.py",
-      "output": ".........\n----------------------------------------------------------------------\nRan 9 tests in 0.107s\n\nOK"
+      "output": ".........\n----------------------------------------------------------------------\nRan 9 tests in 0.089s\n\nOK"
     },
     {
       "test": "docs/queue/test_schema.py",
-      "output": "..................\n----------------------------------------------------------------------\nRan 18 tests in 0.142s\n\nOK"
+      "output": "..................\n----------------------------------------------------------------------\nRan 18 tests in 0.134s\n\nOK"
     }
   ],
   "invariants": [

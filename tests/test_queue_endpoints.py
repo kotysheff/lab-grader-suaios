@@ -215,7 +215,7 @@ def test_startup_rejects_missing_or_public_secret(tmp_path,secret):
     env=dict(os.environ,LOG_DIR=str(tmp_path/'logs'),ADMIN_LOGIN='test',ADMIN_PASSWORD='test',GITHUB_TOKEN='dummy',QUEUE_WORKER_ENABLED='0')
     env.pop('SECRET_KEY',None)
     if secret is not None: env['SECRET_KEY']=secret
-    run=subprocess.run([sys.executable,'-c','import main'],env=env,capture_output=True,text=True,timeout=20)
+    run=subprocess.run([sys.executable,'-c','import dotenv; dotenv.load_dotenv=lambda *a, **k: None; import main'],env=env,capture_output=True,text=True,timeout=20)
     assert run.returncode!=0 and 'собственный SECRET_KEY' in run.stderr
 
 
