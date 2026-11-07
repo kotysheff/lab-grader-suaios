@@ -8,6 +8,7 @@ import { queueAppearance } from "./appearance";
 import { useRowMotion } from "./useRowMotion";
 const coursePath = id => `/admin/courses/${encodeURIComponent(id)}/queue`;
 const eventNames = {
+  config_schedule_override: "Применена поправка расписания",
   called: "Вызван",
   defended: "Защитил",
   failed: "Не защитил",
@@ -132,17 +133,17 @@ export function TeacherQueue({
         <div className="queue-call-toolbar"><button className="primary queue-call-button" disabled={busy || Date.now() / 1000 < data.session.starts_at || !data.next_entry_id} onClick={() => action({
               action: "call_next"
             })}>{q("Вызвать следующего")}</button><span className="queue-muted">{data.current_entry_ids?.length ? q("Можно вызвать ещё одного студента; результат отмечается отдельно для каждого") : data.next_entry_id ? q("Следующий студент выделен в списке") : q("Нет ожидающих студентов")}</span></div>
-        <div className="queue-table-wrap" role="region" aria-label={q("Список сдающих")} tabIndex={0}><table className="queue-table queue-roster-table"><colgroup><col className="queue-col-position" /><col className="queue-col-student" /><col className="queue-col-lab" /><col className="queue-col-date" /><col className="queue-col-status" /><col className="queue-col-actions" /></colgroup><caption className="queue-sr-only">{q("Все участники и результаты выбранного занятия")}</caption><thead><tr><th scope="col" aria-label={q("Позиция")}>№</th><th>{q("Студент / GitHub")}</th><th>{q("Работа")}</th><th>{q("Допущен")}</th><th>{q("Статус")}</th><th>{q("Действия")}</th></tr></thead><tbody ref={rowContainer}>
+        <div className="queue-table-wrap" role="region" aria-label={q("Список сдающих")} tabIndex={0}><table role="table" className="queue-table queue-roster-table"><colgroup><col className="queue-col-position" /><col className="queue-col-student" /><col className="queue-col-lab" /><col className="queue-col-date" /><col className="queue-col-status" /><col className="queue-col-actions" /></colgroup><caption className="queue-sr-only">{q("Все участники и результаты выбранного занятия")}</caption><thead><tr><th scope="col" aria-label={q("Позиция")}>№</th><th>{q("Студент / GitHub")}</th><th>{q("Работа")}</th><th>{q("Допущен")}</th><th>{q("Статус")}</th><th>{q("Действия")}</th></tr></thead><tbody role="rowgroup" ref={rowContainer}>
           {data.entries.map((row, index) => {
                   const current = (data.current_entry_ids || [data.current_entry_id]).includes(row.attempt?.entry_id),
                     next = row.attempt?.entry_id === data.next_entry_id;
                   const active = ["waiting", "called"].includes(row.attempt?.status);
-                  return <tr key={row.candidate_id} data-queue-row={row.candidate_id} className={`${current ? "current" : next ? "next" : row.state} ${row.attempt?.is_repeat ? "repeat" : ""}`}>
-              <td data-label={q("Позиция")}>{active ? index + 1 : row.position ?? "—"}</td><td data-label={q("Студент / GitHub")}><strong>{row.full_name}</strong><br /><a href={`https://github.com/${encodeURIComponent(row.github)}`} target="_blank" rel="noreferrer">{row.github}</a></td><td data-label={q("Работа")}>{row.lab_key}{row.priority != null && <small><br />{q("Приоритет")} {row.priority}</small>}</td><td data-label={q("Допущен")}>{displayDate(row.qualified_at, data.session.timezone)}</td><td data-label={q("Статус")}><span className={`queue-status ${current ? "is-current" : next ? "is-next" : ""}`}>{q(entryLabel(row, {
+                  return <tr role="row" key={row.candidate_id} data-queue-row={row.candidate_id} className={`${current ? "current" : next ? "next" : row.state} ${row.attempt?.is_repeat ? "repeat" : ""}`}>
+              <td role="cell" data-label={q("Позиция")}>{active ? index + 1 : row.position ?? "—"}</td><td role="cell" data-label={q("Студент / GitHub")}><strong>{row.full_name}</strong><br /><a href={`https://github.com/${encodeURIComponent(row.github)}`} target="_blank" rel="noreferrer">{row.github}</a></td><td role="cell" data-label={q("Работа")}>{row.lab_key}{row.priority != null && <small><br />{q("Приоритет")} {row.priority}</small>}</td><td role="cell" data-label={q("Допущен")}>{displayDate(row.qualified_at, data.session.timezone)}</td><td role="cell" data-label={q("Статус")}><span className={`queue-status ${current ? "is-current" : next ? "is-next" : ""}`}>{q(entryLabel(row, {
                           current: data.current_entry_ids || [data.current_entry_id],
                           next: data.next_entry_id
                         }))}</span></td>
-              <td data-label={q("Действия")}><div className="queue-row-actions">{!current && <span className="queue-action-hint">{q("Результат после вызова")}</span>}{[["defended", q("Сдал")], ["failed", q("Не сдал")], ["no_show", q("Не пришёл")]].map(([outcome, label]) => <button key={outcome} className={`queue-result ${outcome}`} data-visible={current} aria-hidden={!current} tabIndex={current ? 0 : -1} disabled={busy || !current} onClick={() => action({
+              <td role="cell" data-label={q("Действия")}><div className="queue-row-actions">{!current && <span className="queue-action-hint">{q("Результат после вызова")}</span>}{[["defended", q("Сдал")], ["failed", q("Не сдал")], ["no_show", q("Не пришёл")]].map(([outcome, label]) => <button key={outcome} className={`queue-result ${outcome}`} data-visible={current} aria-hidden={!current} tabIndex={current ? 0 : -1} disabled={busy || !current} onClick={() => action({
                           action: "result",
                           entry_id: row.attempt.entry_id,
                           outcome
@@ -344,7 +345,7 @@ function Schedule({
           <label>{q("Источник")}<select value={source.source} onChange={e => {
               field("source", e.target.value);
               setError("");
-            }}><option value="manual">{q("Вручную")}</option><option value="suai">{q("ГУАП")}</option><option value="import">{q("Импорт другого вуза")}</option></select></label>
+            }}>{!["manual", "suai", "import"].includes(source.source) && <option value={source.source}>{source.source}</option>}<option value="manual">{q("Вручную")}</option><option value="suai">{q("ГУАП")}</option><option value="import">{q("Импорт другого вуза")}</option></select></label>
           {source.source === "suai" && <>
             <label>{q("ID группы на сайте")}<input required value={source.group_id || ""} onChange={e => field("group_id", e.target.value)} /></label>
             <label>{q("Точное название предмета")}<input required value={source.subject || ""} onChange={e => field("subject", e.target.value)} /></label>
