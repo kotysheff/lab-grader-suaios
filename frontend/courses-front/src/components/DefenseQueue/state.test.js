@@ -29,3 +29,17 @@ test("each simultaneous defense is marked current", () => {
   }
   assert.equal(entryLabel({ attempt: { entry_id: 4, status: "waiting" } }, { current: [2, 3], next: 4 }), "Следующий");
 });
+
+test("schedule follows course/group filters and All keeps independent sessions", async () => {
+  const { filterSessions, ALL_GROUPS } = await import("./state.js");
+  const rows = [{session_id:"b",course_id:"c",group_id:"g2",starts_at:200}, {session_id:"a",course_id:"c",group_id:"g1",starts_at:100}, {session_id:"x",course_id:"other",group_id:"g1",starts_at:50}];
+  assert.deepEqual(filterSessions(rows,"c","g1").map(row=>row.session_id), ["a"]);
+  assert.deepEqual(filterSessions(rows,"c",ALL_GROUPS).map(row=>row.session_id), ["a","b"]);
+  assert.equal(rows[0].session_id,"b");
+});
+test("move editor prefill preserves browser local time", async () => {
+  const { localDateTime } = await import("./state.js");
+  const stamp = 1794238800;
+  assert.ok(Math.abs(new Date(localDateTime(stamp)).getTime()/1000-stamp)<60);
+  assert.equal(localDateTime(NaN), "");
+});

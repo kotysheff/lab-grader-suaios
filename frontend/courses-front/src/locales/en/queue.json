@@ -184,5 +184,17 @@
   "Локальная проверка: таблица доступна только для чтения. Укажите свои ФИО и GitHub, затем выберите посещение в списке ниже.": "Local check: the sheet is read-only. Enter your name and GitHub account, then choose attendance in the roster below.",
   "Участие можно подтвердить или отменить до начала занятия.": "Attendance can be confirmed or cancelled before the session starts.",
   "Дата не получена из таблицы": "No date was obtained from the sheet",
-  "Для групп {{groups}} не найдено расписание ГУАП. Выберите группу и добавьте занятие вручную или настройте её источник.": "No SUAI schedule was found for groups {{groups}}. Select a group and add a session manually or configure its source."
+  "Для групп {{groups}} не найдено расписание ГУАП. Выберите группу и добавьте занятие вручную или настройте её источник.": "No SUAI schedule was found for groups {{groups}}. Select a group and add a session manually or configure its source.",
+  "Все": "All",
+  "Итоги выбранного занятия": "Selected session results",
+  "Счётчики относятся к этому занятию. Результаты учитываются по попыткам защиты.": "These counters cover this session. Results are counted per defense attempt.",
+  "В составе": "Participants",
+  "Выберите конкретную группу, чтобы посмотреть её дедлайны и настройки.": "Select a specific group to view its deadlines and settings.",
+  "Расписание соответствует выбранным фильтрам. Время отображается в часовом поясе занятия. Ввод дат использует часовой пояс браузера (": "The schedule follows the selected filters. Session times use their own time zone. Date inputs use the browser time zone (",
+  "Защиты уже начались. Для другого времени добавьте новое занятие.": "Defenses have started. Add a new session for a different time.",
+  "Восстановить": "Restore",
+  "Занятие восстановлено": "Session restored",
+  "По выбранным фильтрам занятий нет.": "No sessions match the selected filters.",
+  "Чтобы добавить занятие или изменить источник расписания, выберите конкретную группу.": "Select a specific group to add a session or change its schedule source.",
+  "Окончание должно быть позже начала": "The end must be after the start"
 }

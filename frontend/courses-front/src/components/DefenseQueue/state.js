@@ -15,3 +15,14 @@ export function displayDate(timestamp, zone = "Europe/Moscow", locale = "ru-RU")
   if (!timestamp) return "Дата не назначена";
   return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short", timeZone: zone }).format(new Date(timestamp * 1000));
 }
+
+export const ALL_GROUPS = "__all_groups__";
+export function filterSessions(sessions, course, group) {
+  return (sessions || []).filter(session => session.course_id === course && (group === ALL_GROUPS || session.group_id === group))
+    .sort((a, b) => a.starts_at - b.starts_at || a.session_id.localeCompare(b.session_id));
+}
+export function localDateTime(timestamp) {
+  const date = new Date(timestamp * 1000);
+  if (!Number.isFinite(date.getTime())) return "";
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}
