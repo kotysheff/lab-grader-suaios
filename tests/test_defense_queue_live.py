@@ -87,3 +87,19 @@ with tempfile.TemporaryDirectory(dir=root/'data') as temp:
     env=dict(os.environ,GITHUB_TOKEN='public-read-only',QUEUE_WORKER_ENABLED='0')
     result=subprocess.run([sys.executable,'-c',code],cwd=ROOT,env=env,text=True,capture_output=True,timeout=30)
     assert result.returncode==0,result.stdout+result.stderr
+
+
+def test_reset_archives_local_history_and_keeps_configuration(tmp_path):
+    import sqlite3
+    database=tmp_path/'queue.sqlite3'
+    with sqlite3.connect(database) as con:
+        con.execute('CREATE TABLE examples(value)')
+        con.execute("INSERT INTO examples VALUES ('synthetic')")
+    config=tmp_path/'config.json'
+    config.write_text('{}')
+    archive=live.reset_local_state(tmp_path)
+    assert not database.exists()
+    assert config.exists()
+    with sqlite3.connect(archive) as con:
+        assert con.execute('SELECT value FROM examples').fetchone()[0]=='synthetic'
+    assert live.reset_local_state(tmp_path) is None

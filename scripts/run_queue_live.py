@@ -189,14 +189,43 @@ def create_app(directory, course, lessons):
     return main.app
 
 
+def reset_local_state(directory):
+    """Called only after the local server has stopped. Preserve an ignored backup."""
+    import sqlite3
+    from contextlib import closing
+    database = directory/'queue.sqlite3'
+    if not database.exists():
+        return None
+    archive = directory/'backups'/f'queue-before-reset-{time.time_ns()}.sqlite3'
+    archive.parent.mkdir(exist_ok=True)
+    with closing(sqlite3.connect(database)) as source, closing(sqlite3.connect(archive)) as destination:
+        source.backup(destination)
+    for path in (database, Path(str(database)+'-wal'), Path(str(database)+'-shm')):
+        path.unlink(missing_ok=True)
+    print(f'Локальная история очищена. Резервная копия: {archive}', flush=True)
+    return archive
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--check', action='store_true', help='Проверить оба источника и структуру, сохранить обезличенный отчёт, без сервера')
     parser.add_argument('--data-dir', default='data/queue-live', help='Отдельный каталог внутри data/')
     parser.add_argument('--port', type=int, default=8000)
+    parser.add_argument('--reset', action='store_true', help='После остановки сервера: архивировать локальную БД и начать с чистых данных источников')
     args = parser.parse_args()
+    if args.reset and args.check:
+        parser.error('--reset используется только при запуске сервера')
     try:
+        if args.reset:
+            import socket
+            with socket.socket() as probe:
+                try:
+                    probe.bind(('127.0.0.1', args.port))
+                except OSError as error:
+                    raise ValueError('Перед очисткой остановите локальный сервер (Ctrl+C в его терминале)') from error
         directory, course, lessons = prepare(args)
+        if args.reset:
+            reset_local_state(directory)
         if not args.check:
             import uvicorn
             uvicorn.run(create_app(directory, course, lessons), host='127.0.0.1', port=args.port)
