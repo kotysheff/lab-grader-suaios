@@ -661,6 +661,7 @@ def get_course(request: Request, course_id: str):
         "github-organization": course_info.get("github", {}).get("organization", "Unknown"),
         "google-spreadsheet": course_info.get("google", {}).get("spreadsheet", "Unknown"),
         "queue_enabled": bool(course_info.get("queue", {}).get("enabled", False)),
+        "queue_registration_disabled": bool(course_info.get("queue", {}).get("registration_disabled", False)),
         "status": course_info["_meta"]["status"],
         "priority": course_info["_meta"]["priority"],
     }
@@ -822,6 +823,13 @@ def edit_course_put(request: Request, course_id: str, data: EditCourseRequest, a
 @limiter.limit("10/minute")
 def get_course_groups(request: Request, course_id: str):
     course_info = get_course_by_id(course_id)
+    from grading.defense_queue.public_sheet import public_sheet_config
+    try:
+        source = public_sheet_config(course_info)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    if source is not None:
+        return list(source['worksheets'])
     spreadsheet_id = course_info.get("google", {}).get("spreadsheet")
     info_sheet = course_info.get("google", {}).get("info-sheet")
 
@@ -853,16 +861,15 @@ def get_course_labs(request: Request, course_id: str, group_id: str):
         raise HTTPException(status_code=400, detail="Missing spreadsheet ID or labs in config")
 
 
-    client = sheets_client()
-
+    from grading.defense_queue.public_sheet import public_sheet_config, read_public_grid
     try:
-        spreadsheet = client.open_by_key(spreadsheet_id)
-        sheet = spreadsheet.worksheet(group_id)
-
-
-        headers = sheet.row_values(2)[2:]
-    except Exception as e:
-        raise HTTPException(status_code=404, detail=f"Group not found in spreadsheet: {str(e)}")
+        if public_sheet_config(course_info) is not None:
+            headers = read_public_grid(course_info, group_id)[1][2:]
+        else:
+            spreadsheet = sheets_client().open_by_key(spreadsheet_id)
+            headers = spreadsheet.worksheet(group_id).row_values(2)[2:]
+    except Exception as error:
+        raise HTTPException(status_code=404, detail=f"Group not found in spreadsheet: {error}") from error
 
     available_labs = [lab for lab in labs if lab in headers]
     return available_labs
@@ -879,6 +886,8 @@ def register_student(request: Request, course_id: str, group_id: str, student: S
 
     try:
         course_info = get_course_by_id(course_id)
+        if course_info.get('queue', {}).get('registration_disabled', False):
+            raise HTTPException(status_code=409, detail='Для этого локального курса регистрация и запись оценок отключены')
         spreadsheet_id = course_info.get("google", {}).get("spreadsheet")
         # Get column index (0-based in config, convert to 1-based for gspread)
         student_col_config = course_info.get("google", {}).get("student-name-column", 1)
@@ -991,6 +1000,8 @@ def grade_lab(request: Request, course_id: str, group_id: str, lab_id: str, grad
     try:
         # Load course and lab configuration
         course_info = get_course_by_id(course_id)
+        if course_info.get('queue', {}).get('registration_disabled', False):
+            raise HTTPException(status_code=409, detail='Для этого локального курса регистрация и запись оценок отключены')
         org = course_info.get("github", {}).get("organization")
         spreadsheet_id = course_info.get("google", {}).get("spreadsheet")
 
@@ -1211,6 +1222,9 @@ def _sync_defense_queue(course_id, group_id, course, *, sheet=None, force=False)
     public_course['queue'] = queue_config
 
     def fetch_grid():
+        from grading.defense_queue.public_sheet import public_sheet_config, read_public_grid
+        if public_sheet_config(course) is not None:
+            return read_public_grid(course, group_id)
         target = sheet
         if target is None:
             spreadsheet_id = course.get('google', {}).get('spreadsheet')
@@ -1552,6 +1566,7 @@ def _fetch_queue_schedule(url):
     import requests
     response = requests.get(url, timeout=20)
     response.raise_for_status()
+    response.encoding = "utf-8"
     return response.text
 
 

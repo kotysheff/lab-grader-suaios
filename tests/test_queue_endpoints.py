@@ -9,6 +9,8 @@ import main
 from grading.defense_queue.storage import QueueStore
 from grading.defense_queue.sync import sync_group
 
+ORIGINAL_QUEUE_SYNC = main._sync_defense_queue
+
 
 @pytest.fixture
 def queue_client(tmp_path, monkeypatch):
@@ -225,3 +227,31 @@ def test_teacher_schedule_shows_configured_university(queue_client):
     save_schedule(store,'c','g',{'source':'manual','university':'Тестовый вуз'},now=now)
     authenticate(client)
     assert client.get('/admin/queue/sessions').json()[0]['university']=='Тестовый вуз'
+
+
+def test_public_csv_queue_and_navigation_need_no_service_account(queue_client, monkeypatch):
+    client,store,course,now=queue_client
+    import grading.defense_queue.public_sheet as public
+    course['google']['spreadsheet']='test-sheet-123'
+    course['queue']['sheet_source']={'type':'public_csv','worksheets':{'g':'123'}}
+    grid=[['','','GitHub','2026-11-01','2026-11-08'],['№','ФИО','','ЛР1','ЛР2'],['1','Фамилия Имя Отчество','login','v','v']]
+    monkeypatch.setattr(public,'read_public_grid',lambda *args:grid)
+    def no_credentials(): raise AssertionError('Public reading must not request Google credentials')
+    monkeypatch.setattr(main,'sheets_client',no_credentials)
+    assert client.get('/courses/c/groups').json()==['g']
+    assert client.get('/courses/c/groups/g/labs').json()==['ЛР1','ЛР2']
+    # Исходный обработчик интеграции, извлечённый до fixture-подмены.
+    monkeypatch.setattr(main,'_sync_defense_queue',ORIGINAL_QUEUE_SYNC)
+    response=client.get('/courses/c/groups/g/queue')
+    assert response.status_code==200,response.text
+    assert response.json()['entries'][0]['github']=='login'
+
+
+def test_read_only_course_rejects_registration_and_grading(queue_client, monkeypatch):
+    client,_,course,_=queue_client
+    course['queue']['registration_disabled']=True
+    def no_credentials(): raise AssertionError('Read-only course must not use credentials')
+    monkeypatch.setattr(main,'sheets_client',no_credentials)
+    identity={'surname':'Фамилия','name':'Имя','patronymic':'Отчество','github':'login'}
+    assert client.post('/courses/c/groups/g/register',json=identity).status_code==409
+    assert client.post('/courses/c/groups/g/labs/1/grade',json={'github':'login'}).status_code==409
