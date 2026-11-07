@@ -84,6 +84,12 @@ def materialize(store, view, course, *, now):
             (session['session_id'], min(session['ends_at'] + 600, service_ends_at(session))))
 
 
+def _confirmed(con, session_id, student_id):
+    row = con.execute("""SELECT will_attend FROM session_participation WHERE session_id=? AND student_id=?
+        AND attendance_answered=1 ORDER BY updated_at DESC,candidate_id DESC LIMIT 1""", (session_id, student_id)).fetchone()
+    return bool(row and row['will_attend'])
+
+
 def teacher_view(store, course_id, group_id, course, *, deadlines_available, now, session_id):
     view = queue_view(store, course_id, group_id, course, deadlines_available=deadlines_available, now=now, session_id=session_id)
     if view['session'] is None:
@@ -97,17 +103,55 @@ def teacher_view(store, course_id, group_id, course, *, deadlines_available, now
             WHERE c.course_id=? AND c.group_id=? AND c.status='eligible' AND NOT EXISTS
             (SELECT 1 FROM queue_entries e WHERE e.course_id=c.course_id AND e.student_id=c.student_id AND e.status IN ('waiting','called'))
             ORDER BY c.qualified_at,c.candidate_id""",(course_id,group_id))]
-    latest = {row['candidate_id']: row for row in attempts}
-    known = {row['candidate_id'] for row in view['entries']}
+    # A place belongs to a student; changing the admitted lab must not create a second row.
+    with store.connection() as con:
+        superseded = {row[0] for row in con.execute("SELECT entry_id FROM queue_events WHERE session_id=? AND kind='withdrawn' AND json_extract(details_json,'$.correction_of') IS NOT NULL", (session_id,))}
+    latest = {row['github_snapshot'].lower(): row for row in attempts if row['entry_id'] not in superseded}
+    current = {row['github'].lower(): dict(row) for row in view['entries']}
+    with store.connection() as con:
+        for candidate in con.execute("""SELECT c.*,s.github_login,s.full_name FROM queue_candidates c
+                JOIN students s USING(student_id) WHERE c.course_id=? AND c.group_id=? AND c.status='eligible'""", (course_id, group_id)):
+            key = candidate['github_login'].lower()
+            if key not in latest:
+                continue
+            base = current.get(key, {})
+            if base.get('candidate_id') == candidate['candidate_id']:
+                continue
+            current[key] = dict(base, candidate_id=candidate['candidate_id'], full_name=candidate['full_name'],
+                github=key, lab_key=candidate['lab_key'], qualified_at=candidate['qualified_at'],
+                deadline_at=candidate['deadline_at'], priority=None if view['mode'] == 'random' or candidate['deadline_at'] is None else priority_for(
+                    datetime.fromtimestamp(candidate['deadline_at'], timezone.utc),
+                    datetime.fromtimestamp(min(now, view['session']['starts_at']), timezone.utc),
+                    week_anchor=date.fromisoformat(course.get('queue', {}).get('semester_week_anchor', '1970-01-05')),
+                    timezone=course_timezone(course)),
+                will_attend=_confirmed(con, session_id, candidate['student_id']), position=None, state='attending')
     entries = []
-    for row in view['entries']:
-        attempt = latest.get(row['candidate_id'])
-        entries.append(dict(row, attempt=attempt))
-    for cid, attempt in latest.items():
-        if cid not in known:
-            entries.append(dict(candidate_id=cid, full_name=attempt['full_name_snapshot'], github=attempt['github_snapshot'],
-                                lab_key=attempt['lab_key'], qualified_at=attempt['joined_at'], will_attend=True, answered=True,
-                                position=None, state='attending', attempt=attempt))
+    for key in dict.fromkeys([*current, *latest]):
+        attempt = latest.get(key)
+        row = current.get(key)
+        if row is None:
+            row = dict(candidate_id=attempt['candidate_id'], full_name=attempt['full_name_snapshot'], github=key,
+                       lab_key=attempt['lab_key'], qualified_at=attempt['joined_at'], will_attend=True,
+                       answered=True, position=None, state='attending')
+        last_result = next((item for item in reversed(attempts) if item['github_snapshot'].lower() == key
+                           and item['status'] in ('defended', 'failed', 'no_show')), None)
+        # Only an attempt of this lab may supply its status and priority.
+        matching = attempt if attempt and attempt['candidate_id'] == row['candidate_id'] else None
+        entries.append(dict(row, attempt=matching, last_result=last_result,
+                            can_add_tail=bool(row.get('will_attend') and any(c['candidate_id'] == row['candidate_id'] for c in available_candidates))))
+    counters = {}
+    attempt_numbers = {}
+    for attempt in attempts:
+        if attempt['called_at'] is not None or attempt['status'] in ('defended', 'failed', 'no_show'):
+            key = (attempt['student_id'], attempt['lab_key'])
+            counters[key] = counters.get(key, 0) + 1
+            attempt_numbers[attempt['entry_id']] = counters[key]
+    for event in events:
+        event['attempt_number'] = attempt_numbers.get(event['entry_id'])
+        if event['kind'] == 'result_corrected':
+            details = json.loads(event['details_json'])
+            event['previous_outcome'], event['outcome'] = details.get('from'), details.get('to')
+    available_candidates = [c for c in available_candidates if any(row['candidate_id'] == c['candidate_id'] and row['can_add_tail'] for row in entries)]
     active = sorted((row for row in attempts if row['status'] in ('waiting', 'called')),
                     key=lambda row: (row['is_repeat'], row['entry_id']))
     waiting = [row for row in active if row['status'] == 'waiting']
@@ -178,9 +222,11 @@ def add_to_tail(store, session_id, candidate_id, *, now, actor):
         candidate = con.execute("SELECT * FROM queue_candidates WHERE candidate_id=? AND status='eligible'", (candidate_id,)).fetchone()
         session = con.execute('SELECT * FROM sessions WHERE session_id=?', (session_id,)).fetchone()
         if candidate is None or session is None or (candidate['course_id'], candidate['group_id']) != (session['course_id'], session['group_id']):
-            raise ValueError('Нужна допущенная работа своей группы')
+            raise ValueError('Работа уже защищена или больше не допущена. Обновите список и выберите текущую работу студента.')
         if session['enrollment_status'] == 'cancelled' or now >= session['ends_at']:
             raise QueueClosed('Занятие отменено или закончилось')
+        if not _confirmed(con, session_id, candidate['student_id']):
+            raise QueueConflict('Студент не подтвердил участие в этом занятии')
         old = con.execute("SELECT entry_id FROM queue_entries WHERE course_id=? AND student_id=? AND status IN ('waiting','called')", (candidate['course_id'], candidate['student_id'])).fetchone()
         if old:
             raise QueueConflict('У студента уже есть активная попытка')
@@ -203,6 +249,8 @@ def withdraw(store, entry_id, *, now, actor):
 
 
 def move_session(store, session_id, *, starts_at, ends_at, local_date, now, actor):
+    if starts_at <= now:
+        raise ValueError('Перенести занятие можно только на будущее время')
     if starts_at >= ends_at:
         raise ValueError('Окончание должно быть позже начала')
     with store.transaction() as con:
@@ -316,4 +364,38 @@ def promote_next_labs(store, session_id, *, now, actor):
             AND NOT EXISTS(SELECT 1 FROM queue_entries e WHERE e.course_id=c.course_id AND e.student_id=c.student_id AND e.status IN ('waiting','called'))
             ORDER BY c.candidate_id""",(session_id,session['group_id'],session_id)).fetchall()
         for row in candidates:
+            candidate = con.execute('SELECT student_id FROM queue_candidates WHERE candidate_id=?', (row['candidate_id'],)).fetchone()
+            if not _confirmed(con, session_id, candidate['student_id']):
+                continue
             add_to_tail(store,session_id,row['candidate_id'],now=now,actor=actor)
+
+
+def correct_result(store, entry_id, outcome, *, now, actor):
+    if outcome not in ('defended', 'failed', 'no_show'):
+        raise ValueError('Неизвестный результат')
+    with store.transaction() as con:
+        row = con.execute('SELECT * FROM queue_entries WHERE entry_id=?', (entry_id,)).fetchone()
+        if row is None or row['status'] not in ('defended', 'failed', 'no_show'):
+            raise QueueConflict('Исправить можно только завершённую защиту или неявку')
+        if row['status'] == outcome:
+            return
+        if con.execute("SELECT 1 FROM queue_entries WHERE course_id=? AND student_id=? AND entry_id>? AND (called_at IS NOT NULL OR status IN ('defended','failed','no_show'))", (row['course_id'],row['student_id'],entry_id)).fetchone():
+            raise QueueConflict('Уже началась следующая попытка. Сначала исправьте её результат.')
+        if row['status'] == 'defended' and con.execute("SELECT 1 FROM queue_events WHERE candidate_id=? AND kind='sheet_defended'", (row['candidate_id'],)).fetchone():
+            raise QueueConflict('Защита подтверждена Google-таблицей. Сначала исправьте отметку в таблице.')
+        pending = con.execute("SELECT entry_id,candidate_id,session_id FROM queue_entries WHERE course_id=? AND student_id=? AND entry_id>? AND status='waiting'", (row['course_id'],row['student_id'],entry_id)).fetchall()
+        for child in pending:
+            con.execute("UPDATE queue_entries SET status='withdrawn',closed_at=?,version=version+1 WHERE entry_id=?", (now,child['entry_id']))
+            _event(con, child['session_id'], 'withdrawn', now, actor=actor, entry_id=child['entry_id'],candidate_id=child['candidate_id'],details={'correction_of':entry_id})
+        if row['status'] == 'defended':
+            con.execute("UPDATE queue_candidates SET status='inactive' WHERE course_id=? AND student_id=? AND status='eligible'", (row['course_id'],row['student_id']))
+            con.execute("UPDATE queue_candidates SET status='eligible' WHERE candidate_id=?", (row['candidate_id'],))
+        con.execute('UPDATE queue_entries SET status=?,version=version+1 WHERE entry_id=?', (outcome,entry_id))
+        _event(con, row['session_id'], 'result_corrected', now, actor=actor,entry_id=entry_id,candidate_id=row['candidate_id'],details={'from':row['status'],'to':outcome})
+        if outcome == 'defended':
+            con.execute("UPDATE queue_candidates SET status='defended' WHERE candidate_id=?", (row['candidate_id'],))
+        elif outcome == 'failed':
+            session = con.execute('SELECT * FROM sessions WHERE session_id=?', (row['session_id'],)).fetchone()
+            if now < session['ends_at'] and _confirmed(con,row['session_id'],row['student_id']):
+                candidate = con.execute('SELECT * FROM queue_candidates WHERE candidate_id=?', (row['candidate_id'],)).fetchone()
+                _insert_attempt(con,candidate,session,request_key=f'correction:{entry_id}:{row["version"]}',repeat=True,now=now)

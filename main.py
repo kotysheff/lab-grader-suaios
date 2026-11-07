@@ -1453,17 +1453,14 @@ def teacher_queue_action(request: Request, course_id: str, group_id: str, data: 
             op.set_enrollment(store, data.session_id, closed=data.action == 'close_enrollment', now=now, actor=admin)
         elif data.action == 'call_next':
             op.call_next(store, data.session_id, now=now, actor=admin, request_id=data.request_id)
-        elif data.action == 'result' and data.entry_id is not None:
-            old = next(row for row in view['attempts'] if row['entry_id'] == data.entry_id)
-            op.record_result(store, data.entry_id, data.outcome, now=now, actor=admin)
+        elif data.action in ('result', 'correct_result') and data.entry_id is not None:
+            operation = op.correct_result if data.action == 'correct_result' else op.record_result
+            operation(store, data.entry_id, data.outcome, now=now, actor=admin)
             if data.outcome == 'defended':
                 # Следующая уже допущенная работа появляется в хвосте текущего приёма.
                 try:
                     _sync_defense_queue(course_id, group_id, course, force=True)
-                    with store.connection() as con:
-                        candidate = con.execute("SELECT candidate_id FROM queue_candidates WHERE course_id=? AND student_id=? AND status='eligible'", (course_id, old['student_id'])).fetchone()
-                    if candidate and now < view['session']['ends_at']:
-                        op.add_to_tail(store, data.session_id, candidate[0], now=now, actor=admin)
+                    op.promote_next_labs(store, data.session_id, now=now, actor=admin)
                 except Exception:
                     logger.exception('Next admitted lab will be picked up on the next sync')
         elif data.action == 'withdraw' and data.entry_id is not None:
@@ -1550,9 +1547,9 @@ def edit_queue_session(request: Request, course_id: str, group_id: str, session_
         elif data.cancel:
             op.cancel_session(store, session_id, now=int(time.time()), actor=admin)
         else:
-            if data.starts_at is None or data.ends_at is None or data.starts_at.utcoffset() is None or data.ends_at.utcoffset() is None:
-                raise ValueError('Задайте начало и окончание с часовым поясом')
-            op.move_session(store, session_id, starts_at=int(data.starts_at.timestamp()), ends_at=int(data.ends_at.timestamp()),
+            if data.starts_at is None or data.starts_at.utcoffset() is None:
+                raise ValueError('Задайте начало с часовым поясом')
+            op.move_session(store, session_id, starts_at=int(data.starts_at.timestamp()), ends_at=int(data.starts_at.timestamp()) + 90 * 60,
                             local_date=data.starts_at.astimezone(ZoneInfo(course_timezone(course))).date().isoformat(),
                             now=int(time.time()), actor=admin)
         return {'status': 'updated'}

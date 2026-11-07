@@ -109,10 +109,14 @@ def queue_view(store, course_id, group_id, course, *, deadlines_available, now, 
         candidates = con.execute("SELECT * FROM queue_candidates WHERE course_id=? AND group_id=? AND status='eligible' AND qualified_at<=?",
                                  (course_id, group_id, now if now < session['starts_at'] else session['starts_at'])).fetchall()
         for candidate in candidates:
+            previous = con.execute("""SELECT will_attend,attendance_answered,updated_at FROM session_participation
+                WHERE session_id=? AND student_id=? AND attendance_answered=1
+                ORDER BY updated_at DESC,candidate_id DESC LIMIT 1""", (session['session_id'],candidate['student_id'])).fetchone()
             con.execute("""INSERT INTO session_participation(session_id,candidate_id,course_id,group_id,
-                student_id,teacher_key,random_key,updated_at) VALUES (?,?,?,?,?,?,?,?)
+                student_id,teacher_key,random_key,updated_at,will_attend,attendance_answered) VALUES (?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(session_id,candidate_id) DO NOTHING""", (session['session_id'], candidate['candidate_id'],
-                course_id, group_id, candidate['student_id'], session['teacher_key'], secrets.SystemRandom().random(), now))
+                course_id, group_id, candidate['student_id'], session['teacher_key'], secrets.SystemRandom().random(), previous['updated_at'] if previous else now,
+                previous['will_attend'] if previous else 0, previous['attendance_answered'] if previous else 0))
         if now >= session['starts_at']:
             con.execute('UPDATE session_participation SET frozen_at=? WHERE session_id=? AND frozen_at IS NULL',
                         (session['starts_at'], session['session_id']))
@@ -124,7 +128,7 @@ def queue_view(store, course_id, group_id, course, *, deadlines_available, now, 
     candidates = [CandidateOrder(row['candidate_id'], row['qualified_at'],
                   datetime.fromtimestamp(row['deadline_at'], tz=timezone.utc) if row['deadline_at'] is not None else None,
                   row['random_key'], deadline_available=bool(row['deadline_available'])) for row in rows]
-    ordered = order_candidates(candidates, mode=mode, session_start=datetime.fromtimestamp(session['starts_at'], tz=timezone.utc),
+    ordered = order_candidates(candidates, mode=mode, session_start=datetime.fromtimestamp(min(now, session['starts_at']), tz=timezone.utc),
                                week_anchor=anchor, timezone=zone)
     by_id = {row['candidate_id']: row for row in rows}
     entries = []
@@ -135,7 +139,7 @@ def queue_view(store, course_id, group_id, course, *, deadlines_available, now, 
             position += 1
         entries.append({'candidate_id': row['candidate_id'], 'full_name': row['full_name'],
                         'github': row['github_login'], 'lab_key': row['lab_key'],
-                        'qualified_at': row['qualified_at'], 'deadline_at': row['deadline_at'], 'deadline_available': bool(row['deadline_available']), 'priority': None if candidate.deadline is None else priority_for(candidate.deadline, datetime.fromtimestamp(session['starts_at'], timezone.utc), week_anchor=anchor, timezone=zone), 'will_attend': bool(row['will_attend']),
+                        'qualified_at': row['qualified_at'], 'deadline_at': row['deadline_at'], 'deadline_available': bool(row['deadline_available']), 'priority': None if mode.name == 'random' or candidate.deadline is None else priority_for(candidate.deadline, datetime.fromtimestamp(min(now, session['starts_at']), timezone.utc), week_anchor=anchor, timezone=zone), 'will_attend': bool(row['will_attend']),
                         'answered': bool(row['attendance_answered']),
                         'attendance_at': row['attendance_at'] if row['attendance_answered'] else None,
                         'position': position if row['will_attend'] else None,

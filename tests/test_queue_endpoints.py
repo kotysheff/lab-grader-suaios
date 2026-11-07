@@ -125,7 +125,7 @@ def test_malformed_schedule_is_rejected_without_saving(queue_client,config):
         assert con.execute('SELECT count(*) FROM queue_settings').fetchone()[0]==0
 
 
-def test_teacher_can_add_newly_admitted_student_after_freeze(queue_client):
+def test_teacher_cannot_add_unconfirmed_student_after_freeze(queue_client):
     client,store,_,now=queue_client
     authenticate(client)
     store.create_session('current','c','g','teacher',starts_at=now-30,ends_at=now+600,local_date='2026-11-07',now=now-100)
@@ -137,11 +137,11 @@ def test_teacher_can_add_newly_admitted_student_after_freeze(queue_client):
     from unittest.mock import patch
     with patch.object(main,'_sync_defense_queue',return_value=(store,{'deadlines_available':True})):
         view=client.get(path+'?session_id=current').json()
-        assert cid in [r['candidate_id'] for r in view['available_candidates']]
+        assert cid not in [r['candidate_id'] for r in view['available_candidates']]
         assert cid not in [r['candidate_id'] for r in view['entries']]
         response=client.post(path+'/actions',json={'session_id':'current','action':'add_tail','candidate_id':cid})
-    assert response.status_code==200,response.text
-    assert next(r for r in response.json()['entries'] if r['candidate_id']==cid)['attempt']['is_repeat']==1
+    assert response.status_code==409,response.text
+    assert 'не подтвердил' in response.json()['detail']
 
 
 def test_public_default_secret_cannot_forge_admin_cookie(queue_client):
@@ -195,6 +195,10 @@ def test_http_move_and_cancel_preserve_candidate_and_participation(queue_client)
     path='/admin/courses/c/groups/g/queue/sessions/future'
     response=client.patch(path,json={'starts_at':datetime.fromtimestamp(now+5400,timezone.utc).isoformat(),'ends_at':datetime.fromtimestamp(now+9000,timezone.utc).isoformat()})
     assert response.status_code==200,response.text
+    with store.connection() as con:
+        session=con.execute("SELECT * FROM sessions WHERE session_id='future'").fetchone()
+        assert session['ends_at']-session['starts_at']==5400
+    assert client.patch(path,json={'starts_at':datetime.fromtimestamp(now-10,timezone.utc).isoformat()}).status_code==422
     view=client.get('/courses/c/groups/g/queue').json()
     assert view['session']['session_id']=='future' and view['entries'][0]['will_attend']
     assert client.patch(path,json={'cancel':True}).status_code==200
@@ -307,3 +311,31 @@ def test_started_defense_cannot_be_moved_even_after_cancel(queue_client):
     assert client.patch('/admin/courses/c/groups/g/queue/sessions/current',json={'cancel':True}).status_code==200
     row=next(row for row in client.get('/admin/queue/sessions').json() if row['session_id']=='current')
     assert not row['can_move'] and row['can_restore']
+
+
+def test_correct_result_http_keeps_single_row_and_retracts_followup(queue_client):
+    client,store,_,now=queue_client
+    authenticate(client)
+    store.create_session('today','c','g','teacher',starts_at=now-30,ends_at=now+5400,local_date='2026-11-07',now=now-100)
+    with store.connection() as con:
+        cid=con.execute("SELECT candidate_id FROM queue_candidates WHERE status='eligible'").fetchone()[0]
+    store.attendance('today',cid,True,now=now-40)
+    path='/admin/courses/c/groups/g/queue'
+    assert client.get(path+'?session_id=today').status_code==200
+    def action(**payload):
+        response=client.post(path+'/actions',json={'session_id':'today',**payload})
+        assert response.status_code==200,response.text
+        return response.json()
+    called=action(action='call_next')
+    eid=called['current_entry_id']
+    passed=action(action='result',entry_id=eid,outcome='defended')
+    assert len(passed['entries'])==1
+    assert passed['entries'][0]['lab_key']=='2'
+    assert passed['entries'][0]['attempt']['is_repeat']
+    corrected=action(action='correct_result',entry_id=eid,outcome='failed')
+    assert len(corrected['entries'])==1
+    assert corrected['entries'][0]['lab_key']=='1'
+    assert corrected['entries'][0]['attempt']['status']=='waiting'
+    assert corrected['stats']['defended']==0
+    assert corrected['stats']['failed']==1
+    assert any(e['kind']=='result_corrected' and e['outcome']=='failed' and e['previous_outcome']=='defended' for e in corrected['history'])

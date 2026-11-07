@@ -100,6 +100,11 @@ def _sync_group(store, course_id, group_id, course, grid, *, parse_deadline, now
                     deadline = deadlines[key]
                     cursor = con.execute("INSERT INTO queue_candidates(course_id,group_id,student_id,lab_key,lab_order,deadline_at,deadline_available,qualified_at,status) VALUES (?,?,?,?,?,?,?,?,'defended')", (course_id,group_id,student_id,key,lab_positions[key],int(deadline.value.timestamp()) if deadline.value else None,int(deadline.available),now))
                     store.event(con,cursor.lastrowid,'sheet_defended',now)
+            for key, value in cells.items():
+                if parse_lab_cell(value).defended:
+                    for candidate in con.execute("SELECT candidate_id FROM queue_candidates WHERE course_id=? AND student_id=? AND lab_key=? AND status='defended'", (course_id,student_id,key)):
+                        if not con.execute("SELECT 1 FROM queue_events WHERE candidate_id=? AND kind='sheet_defended'", (candidate[0],)).fetchone():
+                            store.event(con,candidate[0],'sheet_defended',now)
             defended = frozenset(row[0] for row in con.execute("SELECT lab_key FROM queue_candidates WHERE course_id=? AND student_id=? AND status='defended'", (course_id, student_id)))
             key = first_admitted_lab(order, cells, defended_in_history=defended)
             old = con.execute("SELECT candidate_id,lab_key,group_id FROM queue_candidates WHERE course_id=? AND student_id=? AND status='eligible'", (course_id, student_id)).fetchone()
