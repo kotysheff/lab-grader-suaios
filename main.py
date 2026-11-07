@@ -1389,9 +1389,12 @@ def _queue_error(error):
 @app.get('/admin/queue/sessions')
 def list_teacher_queue_sessions(request: Request, admin: str = Depends(require_admin)):
     from grading.defense_queue.runtime import queue_store
+    from grading.defense_queue.timing import service_ends_at
+    import time
+    now = int(time.time())
     store = queue_store()
     with store.connection() as con:
-        rows = con.execute('''SELECT s.*,c.title AS course_title FROM sessions s JOIN courses c USING(course_id)
+        rows = con.execute('''SELECT s.*,c.title AS course_title, EXISTS(SELECT 1 FROM queue_entries e WHERE e.session_id=s.session_id AND (e.called_at IS NOT NULL OR e.status IN ('defended','failed','no_show'))) AS service_started FROM sessions s JOIN courses c USING(course_id)
                               ORDER BY starts_at DESC LIMIT 500''').fetchall()
     from grading.defense_queue.operations import effective_course
     courses = {}
@@ -1403,7 +1406,10 @@ def list_teacher_queue_sessions(request: Request, admin: str = Depends(require_a
             except HTTPException: courses[cid] = {}
         course = courses[cid]
         schedule = course.get('queue',{}).get('schedule',{}).get(row['group_id'],{})
-        result.append(dict(row, university=schedule.get('university') or course.get('university','')))
+        result.append(dict(row, university=schedule.get('university') or course.get('university',''),
+                           can_move=not row['service_started'] and row['enrollment_status'] != 'cancelled',
+                           can_cancel=row['enrollment_status'] != 'cancelled' and now < service_ends_at(row),
+                           can_restore=row['enrollment_status'] == 'cancelled' and now < service_ends_at(row)))
     return result
 
 
@@ -1521,6 +1527,7 @@ class QueueMoveRequest(BaseModel):
     starts_at: datetime | None = None
     ends_at: datetime | None = None
     cancel: bool = False
+    restore: bool = False
 
 
 @app.patch('/admin/courses/{course_id}/groups/{group_id}/queue/sessions/{session_id}')
@@ -1536,7 +1543,11 @@ def edit_queue_session(request: Request, course_id: str, group_id: str, session_
             found = con.execute('SELECT 1 FROM sessions WHERE session_id=? AND course_id=? AND group_id=?', (session_id, course_id, group_id)).fetchone()
         if not found:
             raise ValueError('Занятие не найдено')
-        if data.cancel:
+        if data.cancel and data.restore or (data.cancel or data.restore) and (data.starts_at is not None or data.ends_at is not None):
+            raise ValueError('Выберите одно действие: отменить, восстановить или перенести')
+        if data.restore:
+            op.restore_session(store, session_id, now=int(time.time()), actor=admin)
+        elif data.cancel:
             op.cancel_session(store, session_id, now=int(time.time()), actor=admin)
         else:
             if data.starts_at is None or data.ends_at is None or data.starts_at.utcoffset() is None or data.ends_at.utcoffset() is None:

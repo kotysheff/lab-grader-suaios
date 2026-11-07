@@ -268,3 +268,42 @@ def test_settings_include_sheet_dates_even_with_manual_override(queue_client):
     assert data['sheet_deadlines']['1']['raw']=='2026-11-01'
     assert data['sheet_deadlines']['1']['source']=='sheet'
     assert data['timezone']=='UTC'
+
+
+def test_cancel_and_restore_session_preserve_student_confirmation(queue_client):
+    client,store,_,_=queue_client
+    authenticate(client)
+    student={'surname':'Фамилия','name':'Имя','patronymic':'Отчество','github':'login','session_id':'future','will_attend':True}
+    assert client.post('/courses/c/groups/g/queue/attendance',json=student).status_code==200
+    path='/admin/courses/c/groups/g/queue/sessions/future'
+    assert client.patch(path,json={'cancel':True}).status_code==200
+    cancelled=next(row for row in client.get('/admin/queue/sessions').json() if row['session_id']=='future')
+    assert cancelled['can_restore'] and not cancelled['can_move']
+    assert client.patch(path,json={'restore':True}).status_code==200
+    view=client.get('/courses/c/groups/g/queue').json()
+    assert view['session']['session_id']=='future' and view['entries'][0]['will_attend']
+    assert client.patch(path,json={'restore':True}).status_code==200
+    with store.connection() as con:
+        assert con.execute("SELECT count(*) FROM queue_events WHERE kind='restored'").fetchone()[0]==1
+
+
+def test_schedule_patch_rejects_conflicting_actions(queue_client):
+    client,*_=queue_client
+    authenticate(client)
+    path='/admin/courses/c/groups/g/queue/sessions/future'
+    assert client.patch(path,json={'cancel':True,'restore':True}).status_code==422
+    assert client.patch(path,json={'restore':True,'starts_at':'2026-11-09T18:40:00+03:00'}).status_code==422
+
+
+def test_started_defense_cannot_be_moved_even_after_cancel(queue_client):
+    client,store,_,now=queue_client
+    authenticate(client)
+    store.create_session('current','c','g','teacher',starts_at=now-30,ends_at=now+600,local_date='2026-11-07',now=now-100)
+    with store.connection() as con: cid=con.execute("SELECT candidate_id FROM queue_candidates WHERE status='eligible'").fetchone()[0]
+    store.attendance('current',cid,True,now=now-40)
+    assert client.post('/admin/courses/c/groups/g/queue/actions',json={'session_id':'current','action':'call_next'}).status_code==200
+    row=next(row for row in client.get('/admin/queue/sessions').json() if row['session_id']=='current')
+    assert row['service_started'] and not row['can_move']
+    assert client.patch('/admin/courses/c/groups/g/queue/sessions/current',json={'cancel':True}).status_code==200
+    row=next(row for row in client.get('/admin/queue/sessions').json() if row['session_id']=='current')
+    assert not row['can_move'] and row['can_restore']

@@ -57,7 +57,8 @@ def materialize(store, view, course, *, now):
         if con.execute('SELECT 1 FROM queue_reconciliations WHERE session_id=? AND done_at IS NOT NULL', (session['session_id'],)).fetchone():
             return
         checked = con.execute('SELECT checked_at FROM queue_reconciliations WHERE session_id=?', (session['session_id'],)).fetchone()
-        locked = now >= service_ends_at(session) or (checked is not None and checked['checked_at'] is not None)
+        restored = con.execute("SELECT 1 FROM queue_events WHERE session_id=? AND kind='restored' AND json_extract(details_json,'$.revision')=? AND json_extract(details_json,'$.roster_restored')=1", (session['session_id'], session['schedule_revision'])).fetchone()
+        locked = restored is not None or now >= service_ends_at(session) or (checked is not None and checked['checked_at'] is not None)
         initial_rows = [] if locked else view['entries']
         for row in initial_rows:
             if not row['will_attend']:
@@ -208,7 +209,7 @@ def move_session(store, session_id, *, starts_at, ends_at, local_date, now, acto
         session = con.execute('SELECT * FROM sessions WHERE session_id=?', (session_id,)).fetchone()
         if session is None:
             raise ValueError('Занятие не найдено')
-        if con.execute("SELECT 1 FROM queue_entries WHERE session_id=? AND status IN ('called','defended','failed','no_show')", (session_id,)).fetchone():
+        if con.execute("SELECT 1 FROM queue_entries WHERE session_id=? AND (called_at IS NOT NULL OR status IN ('defended','failed','no_show'))", (session_id,)).fetchone():
             raise QueueConflict('Приём уже начат: создайте дополнительное занятие вместо переноса истории')
         con.execute('''UPDATE sessions SET opens_at=?,starts_at=?,ends_at=?,expires_at=?,local_date=?,
             enrollment_status='scheduled',schedule_revision=schedule_revision+1 WHERE session_id=?''',
@@ -223,11 +224,63 @@ def move_session(store, session_id, *, starts_at, ends_at, local_date, now, acto
 
 def cancel_session(store, session_id, *, now, actor):
     with store.transaction() as con:
-        if con.execute('SELECT 1 FROM sessions WHERE session_id=?', (session_id,)).fetchone() is None:
+        session = con.execute('SELECT * FROM sessions WHERE session_id=?', (session_id,)).fetchone()
+        if session is None:
             raise ValueError('Занятие не найдено')
+        if session['enrollment_status'] == 'cancelled':
+            return
+        if now >= service_ends_at(session):
+            raise QueueClosed('День приёма уже завершён: история занятия не отменяется')
+        entries = [dict(row) for row in con.execute("SELECT entry_id,status,version FROM queue_entries WHERE session_id=? AND status IN ('waiting','called')", (session_id,))]
         con.execute("UPDATE sessions SET enrollment_status='cancelled',schedule_revision=schedule_revision+1 WHERE session_id=?", (session_id,))
-        con.execute("UPDATE queue_entries SET status='expired',closed_at=? WHERE session_id=? AND status IN ('waiting','called')", (now, session_id))
-        _event(con, session_id, 'cancelled', now, actor=actor)
+        con.execute("UPDATE queue_entries SET status='expired',closed_at=?,version=version+1 WHERE session_id=? AND status IN ('waiting','called')", (now, session_id))
+        _event(con, session_id, 'cancelled', now, actor=actor,
+               details={'previous_status': session['enrollment_status'], 'entries': entries})
+
+
+def restore_session(store, session_id, *, now, actor):
+    with store.transaction() as con:
+        session = con.execute('SELECT * FROM sessions WHERE session_id=?', (session_id,)).fetchone()
+        if session is None:
+            raise ValueError('Занятие не найдено')
+        if session['enrollment_status'] != 'cancelled':
+            return
+        if now >= service_ends_at(session):
+            raise QueueClosed('День приёма уже завершён: назначьте новое занятие')
+        cancellation = con.execute("SELECT * FROM queue_events WHERE session_id=? AND kind='cancelled' ORDER BY event_id DESC LIMIT 1", (session_id,)).fetchone()
+        details = json.loads(cancellation['details_json']) if cancellation else {}
+        entries = details.get('entries')
+        if entries is None and cancellation:
+            # Совместимость с отменами старой версии, где не было снимка состояний.
+            entries = [{'entry_id': row['entry_id'], 'status': 'called' if row['called_at'] else 'waiting', 'version': row['version']-1}
+                       for row in con.execute("SELECT * FROM queue_entries WHERE session_id=? AND status='expired' AND closed_at=?", (session_id, cancellation['occurred_at']))]
+        count = 0
+        for old in entries or []:
+            row = con.execute('SELECT e.*,c.status AS candidate_status FROM queue_entries e JOIN queue_candidates c USING(candidate_id) WHERE e.entry_id=? AND e.session_id=?', (old['entry_id'], session_id)).fetchone()
+            if row is None or row['status'] != 'expired' or row['version'] != old['version']+1 or row['candidate_status'] != 'eligible':
+                continue
+            if con.execute("SELECT 1 FROM queue_entries WHERE course_id=? AND student_id=? AND status IN ('waiting','called')", (row['course_id'], row['student_id'])).fetchone():
+                raise QueueConflict('У участника уже есть активная запись на другом занятии; завершите её перед восстановлением')
+            con.execute('UPDATE queue_entries SET status=?,closed_at=NULL,version=version+1 WHERE entry_id=?', (old['status'], row['entry_id']))
+            count += 1
+        status = details.get('previous_status', 'scheduled')
+        if status not in ('scheduled', 'open', 'closed'):
+            status = 'scheduled'
+        revision = session['schedule_revision'] + 1
+        con.execute('UPDATE sessions SET enrollment_status=?,schedule_revision=? WHERE session_id=?', (status, revision, session_id))
+        frozen = con.execute("SELECT details_json FROM queue_events WHERE session_id=? AND kind='roster_frozen' ORDER BY event_id DESC LIMIT 1", (session_id,)).fetchone()
+        roster_restored = now >= session['starts_at'] and frozen is not None
+        if roster_restored:
+            snapshot = json.loads(frozen['details_json'])
+            snapshot['session'] = dict(con.execute('SELECT * FROM sessions WHERE session_id=?', (session_id,)).fetchone())
+            snapshot['attendance_open'] = False
+            _event(con, session_id, 'roster_frozen', now, actor=actor, details=snapshot)
+        else:
+            con.execute('UPDATE session_participation SET frozen_at=NULL WHERE session_id=?', (session_id,))
+        con.execute('UPDATE queue_reconciliations SET due_at=?,done_at=NULL,checked_at=NULL,claimed_at=NULL,error=NULL WHERE session_id=?',
+                    (min(session['ends_at']+600, service_ends_at(session)), session_id))
+        _event(con, session_id, 'restored', now, actor=actor,
+               details={'revision': revision, 'roster_restored': roster_restored, 'entries_restored': count})
 
 
 def save_schedule(store, course_id, group_id, config, *, now):

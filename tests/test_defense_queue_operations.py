@@ -120,6 +120,62 @@ class OperationsTests(unittest.TestCase):
             self.assertEqual(con.execute("SELECT count(*) FROM queue_candidates WHERE status='eligible'").fetchone()[0], 3)
         self.assertEqual(self.view()['stats']['expired'], 2)
 
+    def test_restore_cancelled_future_session_preserves_attendance(self):
+        ops.cancel_session(self.store, 's', now=20, actor='admin')
+        ops.restore_session(self.store, 's', now=21, actor='admin')
+        self.assertEqual(self.view()['stats']['waiting'], 2)
+        with self.store.connection() as con:
+            self.assertEqual(con.execute("SELECT count(*) FROM queue_events WHERE kind='restored'").fetchone()[0], 1)
+        ops.restore_session(self.store, 's', now=22, actor='admin')
+        with self.store.connection() as con:
+            self.assertEqual(con.execute("SELECT count(*) FROM queue_events WHERE kind='restored'").fetchone()[0], 1)
+
+    def test_restore_current_session_keeps_called_and_waiting(self):
+        self.view()
+        first = ops.call_next(self.store, 's', now=111, actor='admin')
+        ops.cancel_session(self.store, 's', now=112, actor='admin')
+        ops.restore_session(self.store, 's', now=113, actor='admin')
+        restored = self.view(114)
+        self.assertEqual(restored['current_entry_ids'], [first])
+        self.assertEqual(restored['stats']['waiting'], 1)
+        self.assertEqual(len(restored['attempts']), 2)
+        ops.record_result(self.store, first, 'defended', now=115, actor='admin')
+        self.assertEqual(self.view(116)['stats']['defended'], 1)
+
+    def test_restore_conflict_does_not_partially_reopen(self):
+        self.view()
+        ops.cancel_session(self.store, 's', now=112, actor='admin')
+        self.store.create_session('other', 'c', 'g', 'other', starts_at=100, ends_at=200, local_date='1970-01-01', now=1)
+        ops.add_to_tail(self.store, 'other', self.ids[1], now=113, actor='admin')
+        with self.assertRaises(ops.QueueConflict):
+            ops.restore_session(self.store, 's', now=114, actor='admin')
+        with self.store.connection() as con:
+            self.assertEqual(con.execute("SELECT enrollment_status FROM sessions WHERE session_id='s'").fetchone()[0], 'cancelled')
+            self.assertEqual(con.execute("SELECT count(*) FROM queue_entries WHERE session_id='s' AND status IN ('waiting','called')").fetchone()[0], 0)
+
+    def test_cancel_does_not_make_started_defense_movable(self):
+        self.view()
+        ops.call_next(self.store, 's', now=111, actor='admin')
+        ops.cancel_session(self.store, 's', now=112, actor='admin')
+        with self.assertRaises(ops.QueueConflict):
+            ops.move_session(self.store, 's', starts_at=300, ends_at=400, local_date='1970-01-01', now=113, actor='admin')
+
+    def test_restore_preserves_early_closed_enrollment(self):
+        ops.set_enrollment(self.store, 's', closed=True, now=20, actor='admin')
+        ops.cancel_session(self.store, 's', now=21, actor='admin')
+        ops.restore_session(self.store, 's', now=22, actor='admin')
+        with self.store.connection() as con:
+            self.assertEqual(con.execute("SELECT enrollment_status FROM sessions WHERE session_id='s'").fetchone()[0], 'closed')
+
+    def test_restore_cannot_reopen_a_past_day(self):
+        ops.cancel_session(self.store, 's', now=112, actor='admin')
+        with self.assertRaises(ops.QueueClosed):
+            ops.restore_session(self.store, 's', now=86400, actor='admin')
+
+    def test_cannot_cancel_finished_day(self):
+        with self.assertRaises(ops.QueueClosed):
+            ops.cancel_session(self.store, 's', now=86400, actor='admin')
+
     def test_settings_persist(self):
         ops.save_settings(self.store, 'c', random=True, deadlines={'1': None}, now=10)
         effective = ops.effective_course(Store(self.store.path), 'c', self.course)
