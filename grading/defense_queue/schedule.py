@@ -73,7 +73,7 @@ def parse_suai(html):
         if node.has('text-danger', 'mt-3'):
             match = re.search(r'(\d+)\s*пара', node.text)
             slot = int(match[1]) if match else None
-        if not node.has('mb-3', 'py-2', 'd-flex', 'gap-2') or day is None or slot is None:
+        if not node.has('mb-3', 'py-2', 'd-flex') or day is None or slot is None:
             continue
         descendants = list(node.walk())
         subject = next((n.text for n in descendants if n.has('lead')), '')
@@ -160,7 +160,8 @@ def expand_suai(lessons, config, *, now, timezone):
                     result.append(dict(key=f'suai:{config["group_id"]}:{current}:{slot}', starts_at=int(start.timestamp()),
                                        ends_at=int(end.timestamp()), teacher_key=config.get('teacher_key', 'main'), source_kind='university'))
             current += timedelta(days=1)
-    return result
+    # Одна пара может повторяться карточками аудиторий/подгрупп. Очередь общая.
+    return list({row['key']: row for row in result}.values())
 
 
 def import_sessions(store, course_id, group_id, course, lessons, *, now):
