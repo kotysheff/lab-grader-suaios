@@ -124,7 +124,7 @@ export function TeacherQueue({
       {sessionId && !data && !roster.error && <p role="status">{q("Загружается очередь…")}</p>}
       {data && <>
         <div className="queue-session-heading"><h2>{displayDate(data.session.starts_at, data.session.timezone)} <span className="queue-group-badge">{group}</span></h2>
-        <p>{data.mode === "random" ? q("Случайный порядок") : q("Приоритет по дедлайнам, от −1")}. {data.attendance_open ? q("Студенты могут менять посещение до начала пары.") : q("Состав зафиксирован; изменения доступны преподавателю.")}</p></div>
+        <p>{data.mode === "random" ? q("Случайный порядок") : q("Приоритет по дедлайнам, от −1")}. {data.attendance_open ? q("Участие можно подтвердить или отменить до начала занятия.") : q("Состав зафиксирован; изменения доступны преподавателю.")}</p></div>
         {data.stale && <p className="queue-notice">{q("Таблица недоступна. Показан сохранённый состав, обновление допуска ожидается.")}</p>}
         {Date.now() / 1000 < data.session.starts_at && data.session.enrollment_status !== "cancelled" && <button disabled={busy} onClick={() => action({
             action: data.session.enrollment_status === "closed" ? "open_enrollment" : "close_enrollment"
@@ -193,8 +193,9 @@ function Settings({
   perform,
   busy
 }) {
-  useQueueLanguage();
-  const modeState = usePolling(`${coursePath(course)}/settings${group ? `?group_id=${encodeURIComponent(group)}` : ""}`);
+  const { displayDate } = useQueueLanguage();
+  const settingsPath = `${coursePath(course)}/settings${group ? `?group_id=${encodeURIComponent(group)}` : ""}`;
+  const modeState = usePolling(settingsPath);
   const modeLocked = modeState.data?.mode_locked;
   const [config, setConfig] = useState(null),
     [random, setRandom] = useState(false),
@@ -202,7 +203,7 @@ function Settings({
     [error, setError] = useState("");
   useEffect(() => {
     let alive = true;
-    queueRequest(`${coursePath(course)}/settings`).then(data => {
+    queueRequest(settingsPath).then(data => {
       if (alive) {
         setConfig(data);
         setRandom(Boolean(data.queue.random));
@@ -212,7 +213,7 @@ function Settings({
     return () => {
       alive = false;
     };
-  }, [course]);
+  }, [settingsPath]);
   if (error) return <p role="alert">{queueError(error)}</p>;
   if (!config) return <p role="status">{q("Загружаются настройки…")}</p>;
   const patch = (key, value, remove = false) => setDeadlines(old => {
@@ -239,6 +240,12 @@ function Settings({
     <p>{q("«Без дедлайна» означает отсутствие срока по правилам работы. «Из таблицы» требует читаемую дату; пустая ячейка не считается отсутствием срока.")}</p>
     <div className="queue-settings">{config.labs.map(lab => <fieldset key={lab.key}><legend>{lab.title}</legend>
       <label>{q("Источник")}<select value={!(lab.key in deadlines) ? "sheet" : deadlines[lab.key] === null ? "none" : "manual"} onChange={e => patch(lab.key, e.target.value === "none" ? null : "", e.target.value === "sheet")}><option value="sheet">{q("Из таблицы")}</option><option value="none">{q("Без дедлайна")}</option><option value="manual">{q("Вручную")}</option></select></label>
+      {!(lab.key in deadlines) && <div className="queue-sheet-deadline" aria-live="polite">{(() => {
+        const received = modeState.data?.sheet_deadlines?.[lab.key] || config.sheet_deadlines?.[lab.key];
+        const zone = modeState.data?.timezone || config.timezone;
+        if (!received || !received.available) return <small>{q("Дата не получена из таблицы")}{received?.raw ? `: ${received.raw}` : ""}</small>;
+        return <small>{received.value != null ? displayDate(received.value, zone) : q("Без дедлайна")}</small>;
+      })()}</div>}
       {lab.key in deadlines && deadlines[lab.key] !== null && <label>{q("Дата")}<input required placeholder={q("ГГГГ-ММ-ДД")} value={deadlines[lab.key]} onChange={e => patch(lab.key, e.target.value)} /></label>}
     </fieldset>)}</div><button className="primary" disabled={busy}>{q("Сохранить настройки")}</button>
   </form>;
@@ -256,6 +263,7 @@ function Schedule({
   const [start, setStart] = useState(""),
     [end, setEnd] = useState(""),
     [teacher, setTeacher] = useState("main");
+  const [unmatchedGroups, setUnmatchedGroups] = useState([]);
   const [source, setSource] = useState({
       source: "manual",
       university: ""
@@ -268,10 +276,10 @@ function Schedule({
   useEffect(() => {
     let alive = true;
     if (course) queueRequest(`${coursePath(course)}/settings`).then(data => {
-      if (alive) setSource(data.queue.schedule?.[group] || {
-        source: "manual",
-        university: ""
-      });
+      if (alive) {
+        setSource(data.queue.schedule?.[group] || { source: "manual", university: "" });
+        setUnmatchedGroups(Object.entries(data.queue.schedule || {}).filter(([, value]) => value.match_status === "group_not_found").map(([name]) => name));
+      }
     }).catch(err => setError(err));
     return () => {
       alive = false;
@@ -284,6 +292,7 @@ function Schedule({
   const iso = value => new Date(value).toISOString();
   return <>
     <h2>{q("Расписание преподавателя")}</h2>
+    {unmatchedGroups.length > 0 && <p className="queue-notice">{q("Для групп {{groups}} не найдено расписание ГУАП. Выберите группу и добавьте занятие вручную или настройте её источник.", { groups: unmatchedGroups.join(", ") })}</p>}
     <p>{q("Все группы и предметы; время отображается в часовом поясе занятия. Ввод дат ниже использует часовой пояс браузера (")} {Intl.DateTimeFormat().resolvedOptions().timeZone}).</p>
     <div className="queue-table-wrap"><table className="queue-table"><thead><tr><th>{q("Предмет / группа")}</th><th>{q("Начало")}</th><th>{q("Окончание")}</th><th>{q("Преподаватель / источник")}</th><th>{q("Действия")}</th></tr></thead><tbody>
       {[...sessions].sort((a, b) => a.starts_at - b.starts_at).map(s => <tr key={s.session_id}><td>{s.course_title}{s.university && <small><br />{s.university}</small>}<br />{s.group_id}</td><td>{displayDate(s.starts_at, s.timezone)}</td><td>{displayDate(s.ends_at, s.timezone)}{s.enrollment_status === "cancelled" && q(" · отменено")}</td><td>{s.teacher_key}<br />{s.source_kind === "university" ? q("Вуз") : q("Вручную")}</td><td><div className="queue-actions"><button disabled={busy || s.enrollment_status === "cancelled"} onClick={() => {
