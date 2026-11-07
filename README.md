@@ -13,6 +13,7 @@
 
 <p>
   <a href="docs/queue/RUNBOOK.md">Запустить демо</a> ·
+  <a href="docs/queue/LIVE_CHECK.md">Проверить публичные данные без ключей</a> ·
   <a href="research/queue-study/README.md">Исследование</a> ·
   <a href="docs/adr/README.md">Архитектурные решения</a> ·
   <a href="docs/hackathon/lab-grader-queue/README.md">ADR по шаблону задания</a> ·

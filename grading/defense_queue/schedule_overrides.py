@@ -67,7 +67,7 @@ def apply_overrides(store, course_id, group_id, course, rows, *, now):
                     continue
                 if con.execute("SELECT 1 FROM queue_events WHERE session_id=? AND kind='config_schedule_override' AND details_json=?", (sid, signature)).fetchone():
                     continue
-                last = con.execute("SELECT actor_key FROM queue_events WHERE session_id=? AND kind IN ('schedule_changed','cancelled') ORDER BY event_id DESC LIMIT 1", (sid,)).fetchone()
+                last = con.execute("SELECT actor_key FROM queue_events WHERE session_id=? AND kind IN ('schedule_changed','cancelled','restored') ORDER BY event_id DESC LIMIT 1", (sid,)).fetchone()
                 if last and last['actor_key'] != 'course-config':
                     continue  # Более позднее ручное решение преподавателя важнее YAML.
                 if row['kind'] == 'cancel':

@@ -9,6 +9,8 @@ import main
 from grading.defense_queue.storage import QueueStore
 from grading.defense_queue.sync import sync_group
 
+ORIGINAL_QUEUE_SYNC = main._sync_defense_queue
+
 
 @pytest.fixture
 def queue_client(tmp_path, monkeypatch):
@@ -123,7 +125,7 @@ def test_malformed_schedule_is_rejected_without_saving(queue_client,config):
         assert con.execute('SELECT count(*) FROM queue_settings').fetchone()[0]==0
 
 
-def test_teacher_can_add_newly_admitted_student_after_freeze(queue_client):
+def test_teacher_cannot_add_unconfirmed_student_after_freeze(queue_client):
     client,store,_,now=queue_client
     authenticate(client)
     store.create_session('current','c','g','teacher',starts_at=now-30,ends_at=now+600,local_date='2026-11-07',now=now-100)
@@ -135,11 +137,11 @@ def test_teacher_can_add_newly_admitted_student_after_freeze(queue_client):
     from unittest.mock import patch
     with patch.object(main,'_sync_defense_queue',return_value=(store,{'deadlines_available':True})):
         view=client.get(path+'?session_id=current').json()
-        assert cid in [r['candidate_id'] for r in view['available_candidates']]
+        assert cid not in [r['candidate_id'] for r in view['available_candidates']]
         assert cid not in [r['candidate_id'] for r in view['entries']]
         response=client.post(path+'/actions',json={'session_id':'current','action':'add_tail','candidate_id':cid})
-    assert response.status_code==200,response.text
-    assert next(r for r in response.json()['entries'] if r['candidate_id']==cid)['attempt']['is_repeat']==1
+    assert response.status_code==409,response.text
+    assert 'не подтвердил' in response.json()['detail']
 
 
 def test_public_default_secret_cannot_forge_admin_cookie(queue_client):
@@ -193,6 +195,10 @@ def test_http_move_and_cancel_preserve_candidate_and_participation(queue_client)
     path='/admin/courses/c/groups/g/queue/sessions/future'
     response=client.patch(path,json={'starts_at':datetime.fromtimestamp(now+5400,timezone.utc).isoformat(),'ends_at':datetime.fromtimestamp(now+9000,timezone.utc).isoformat()})
     assert response.status_code==200,response.text
+    with store.connection() as con:
+        session=con.execute("SELECT * FROM sessions WHERE session_id='future'").fetchone()
+        assert session['ends_at']-session['starts_at']==5400
+    assert client.patch(path,json={'starts_at':datetime.fromtimestamp(now-10,timezone.utc).isoformat()}).status_code==422
     view=client.get('/courses/c/groups/g/queue').json()
     assert view['session']['session_id']=='future' and view['entries'][0]['will_attend']
     assert client.patch(path,json={'cancel':True}).status_code==200
@@ -225,3 +231,111 @@ def test_teacher_schedule_shows_configured_university(queue_client):
     save_schedule(store,'c','g',{'source':'manual','university':'Тестовый вуз'},now=now)
     authenticate(client)
     assert client.get('/admin/queue/sessions').json()[0]['university']=='Тестовый вуз'
+
+
+def test_public_csv_queue_and_navigation_need_no_service_account(queue_client, monkeypatch):
+    client,store,course,now=queue_client
+    import grading.defense_queue.public_sheet as public
+    course['google']['spreadsheet']='test-sheet-123'
+    course['queue']['sheet_source']={'type':'public_csv','worksheets':{'g':'123'}}
+    grid=[['','','GitHub','2026-11-01','2026-11-08'],['№','ФИО','','ЛР1','ЛР2'],['1','Фамилия Имя Отчество','login','v','v']]
+    monkeypatch.setattr(public,'read_public_grid',lambda *args:grid)
+    def no_credentials(): raise AssertionError('Public reading must not request Google credentials')
+    monkeypatch.setattr(main,'sheets_client',no_credentials)
+    assert client.get('/courses/c/groups').json()==['g']
+    assert client.get('/courses/c/groups/g/labs').json()==['ЛР1','ЛР2']
+    # Исходный обработчик интеграции, извлечённый до fixture-подмены.
+    monkeypatch.setattr(main,'_sync_defense_queue',ORIGINAL_QUEUE_SYNC)
+    response=client.get('/courses/c/groups/g/queue')
+    assert response.status_code==200,response.text
+    assert response.json()['entries'][0]['github']=='login'
+
+
+def test_read_only_course_rejects_registration_and_grading(queue_client, monkeypatch):
+    client,_,course,_=queue_client
+    course['queue']['registration_disabled']=True
+    def no_credentials(): raise AssertionError('Read-only course must not use credentials')
+    monkeypatch.setattr(main,'sheets_client',no_credentials)
+    identity={'surname':'Фамилия','name':'Имя','patronymic':'Отчество','github':'login'}
+    assert client.post('/courses/c/groups/g/register',json=identity).status_code==409
+    assert client.post('/courses/c/groups/g/labs/1/grade',json={'github':'login'}).status_code==409
+
+
+def test_settings_include_sheet_dates_even_with_manual_override(queue_client):
+    client,_,_,_=queue_client
+    authenticate(client)
+    assert client.put('/admin/courses/c/queue/settings',json={'random':False,'deadlines':{'1':None}}).status_code==200
+    response=client.get('/admin/courses/c/queue/settings?group_id=g')
+    assert response.status_code==200,response.text
+    data=response.json()
+    assert data['sheet_deadlines']['1']['value'] is not None
+    assert data['sheet_deadlines']['1']['raw']=='2026-11-01'
+    assert data['sheet_deadlines']['1']['source']=='sheet'
+    assert data['timezone']=='UTC'
+
+
+def test_cancel_and_restore_session_preserve_student_confirmation(queue_client):
+    client,store,_,_=queue_client
+    authenticate(client)
+    student={'surname':'Фамилия','name':'Имя','patronymic':'Отчество','github':'login','session_id':'future','will_attend':True}
+    assert client.post('/courses/c/groups/g/queue/attendance',json=student).status_code==200
+    path='/admin/courses/c/groups/g/queue/sessions/future'
+    assert client.patch(path,json={'cancel':True}).status_code==200
+    cancelled=next(row for row in client.get('/admin/queue/sessions').json() if row['session_id']=='future')
+    assert cancelled['can_restore'] and not cancelled['can_move']
+    assert client.patch(path,json={'restore':True}).status_code==200
+    view=client.get('/courses/c/groups/g/queue').json()
+    assert view['session']['session_id']=='future' and view['entries'][0]['will_attend']
+    assert client.patch(path,json={'restore':True}).status_code==200
+    with store.connection() as con:
+        assert con.execute("SELECT count(*) FROM queue_events WHERE kind='restored'").fetchone()[0]==1
+
+
+def test_schedule_patch_rejects_conflicting_actions(queue_client):
+    client,*_=queue_client
+    authenticate(client)
+    path='/admin/courses/c/groups/g/queue/sessions/future'
+    assert client.patch(path,json={'cancel':True,'restore':True}).status_code==422
+    assert client.patch(path,json={'restore':True,'starts_at':'2026-11-09T18:40:00+03:00'}).status_code==422
+
+
+def test_started_defense_cannot_be_moved_even_after_cancel(queue_client):
+    client,store,_,now=queue_client
+    authenticate(client)
+    store.create_session('current','c','g','teacher',starts_at=now-30,ends_at=now+600,local_date='2026-11-07',now=now-100)
+    with store.connection() as con: cid=con.execute("SELECT candidate_id FROM queue_candidates WHERE status='eligible'").fetchone()[0]
+    store.attendance('current',cid,True,now=now-40)
+    assert client.post('/admin/courses/c/groups/g/queue/actions',json={'session_id':'current','action':'call_next'}).status_code==200
+    row=next(row for row in client.get('/admin/queue/sessions').json() if row['session_id']=='current')
+    assert row['service_started'] and not row['can_move']
+    assert client.patch('/admin/courses/c/groups/g/queue/sessions/current',json={'cancel':True}).status_code==200
+    row=next(row for row in client.get('/admin/queue/sessions').json() if row['session_id']=='current')
+    assert not row['can_move'] and row['can_restore']
+
+
+def test_correct_result_http_keeps_single_row_and_retracts_followup(queue_client):
+    client,store,_,now=queue_client
+    authenticate(client)
+    store.create_session('today','c','g','teacher',starts_at=now-30,ends_at=now+5400,local_date='2026-11-07',now=now-100)
+    with store.connection() as con:
+        cid=con.execute("SELECT candidate_id FROM queue_candidates WHERE status='eligible'").fetchone()[0]
+    store.attendance('today',cid,True,now=now-40)
+    path='/admin/courses/c/groups/g/queue'
+    assert client.get(path+'?session_id=today').status_code==200
+    def action(**payload):
+        response=client.post(path+'/actions',json={'session_id':'today',**payload})
+        assert response.status_code==200,response.text
+        return response.json()
+    called=action(action='call_next')
+    eid=called['current_entry_id']
+    passed=action(action='result',entry_id=eid,outcome='defended')
+    assert len(passed['entries'])==1
+    assert passed['entries'][0]['lab_key']=='2'
+    assert passed['entries'][0]['attempt']['is_repeat']
+    corrected=action(action='correct_result',entry_id=eid,outcome='failed')
+    assert len(corrected['entries'])==1
+    assert corrected['entries'][0]['lab_key']=='1'
+    assert corrected['entries'][0]['attempt']['status']=='waiting'
+    assert corrected['stats']['defended']==0
+    assert corrected['stats']['failed']==1
+    assert any(e['kind']=='result_corrected' and e['outcome']=='failed' and e['previous_outcome']=='defended' for e in corrected['history'])

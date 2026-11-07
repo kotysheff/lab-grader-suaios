@@ -88,8 +88,14 @@ class ScheduleTests(unittest.TestCase):
         self.assertFalse(worker.reconcile(reopened,'s',now=900,sync=success))
         self.assertEqual(calls,[1])
         with reopened.connection() as con:
-            self.assertEqual([r[0] for r in con.execute('SELECT status FROM queue_entries ORDER BY entry_id')],['defended','expired'])
+            self.assertEqual([r[0] for r in con.execute('SELECT status FROM queue_entries ORDER BY entry_id')],['defended','waiting'])
             self.assertEqual(con.execute('SELECT attempts FROM queue_reconciliations').fetchone()[0],2)
+            self.assertIsNone(con.execute('SELECT done_at FROM queue_reconciliations').fetchone()[0])
+            self.assertEqual(con.execute('SELECT checked_at FROM queue_reconciliations').fetchone()[0],860)
+        self.assertTrue(worker.reconcile(reopened,'s',now=86400,sync=success))
+        with reopened.connection() as con:
+            self.assertEqual([r[0] for r in con.execute('SELECT status FROM queue_entries ORDER BY entry_id')],['defended','expired'])
+            self.assertEqual(con.execute('SELECT done_at FROM queue_reconciliations').fetchone()[0],86400)
 
     def test_worker_freezes_and_reconciles_without_open_browser(self):
         self.store.configure_group('c','g',title='Предмет')
@@ -111,8 +117,12 @@ class ScheduleTests(unittest.TestCase):
         worker.QueueWorker(Store(self.store.path),lambda:[('c',course)],sync,lambda url:None).tick(now=800)
         with self.store.connection() as con:
             self.assertEqual(con.execute('SELECT status FROM queue_entries').fetchone()[0],'defended')
-            self.assertEqual(con.execute('SELECT done_at FROM queue_reconciliations').fetchone()[0],800)
+            self.assertIsNone(con.execute('SELECT done_at FROM queue_reconciliations').fetchone()[0])
+            self.assertEqual(con.execute('SELECT checked_at FROM queue_reconciliations').fetchone()[0],800)
         self.assertTrue(any(c.get('force') for c in calls))
+        worker.QueueWorker(Store(self.store.path),lambda:[('c',course)],sync,lambda url:None).tick(now=86400)
+        with self.store.connection() as con:
+            self.assertEqual(con.execute('SELECT done_at FROM queue_reconciliations').fetchone()[0],86400)
 
 
 class ScheduleExtensionTests(unittest.TestCase):
@@ -192,3 +202,17 @@ class ScheduleExtensionTests(unittest.TestCase):
             self.assertEqual(con.execute('SELECT starts_at FROM sessions').fetchone()[0],500)
 
 if __name__ == '__main__': unittest.main()
+
+
+def test_suai_card_without_gap_class_and_duplicate_subgroups():
+    html='''<div class="content"><h4>Понедельник</h4><div class="text-danger mt-3">6 пара</div>
+    <div class="mb-3 py-2 d-flex"><div class="fs-6">Лабораторное занятие</div>
+    <div class="lead">Операционные системы</div><a href="?gr=7116">4434</a><a href="?pr=39614">Преподаватель</a></div></div>'''
+    parsed=schedule.parse_suai(html)
+    assert len(parsed)==1 and parsed[0]['slot']==6
+    config={'source':'suai','group_id':'7116','subject':'Операционные системы','kind':'Лабораторное занятие','teacher_id':'39614','week_anchor':'2026-08-31'}
+    now=int(datetime(2026,11,7,tzinfo=timezone.utc).timestamp())
+    once=schedule.expand_suai(parsed,config,now=now,timezone='Europe/Moscow')
+    twice=schedule.expand_suai(parsed*2,config,now=now,timezone='Europe/Moscow')
+    assert twice==once and once
+    assert datetime.fromtimestamp(once[0]['starts_at'],timezone.utc).hour==15  # 18:40 МСК

@@ -1,4 +1,4 @@
--- Снимок схемы после миграций 001–005. Проверяется test_documented_schema_matches_migrations.
+-- Снимок схемы после миграций 001–006. Проверяется test_documented_schema_matches_migrations.
 
 CREATE TABLE courses (
     course_id TEXT PRIMARY KEY NOT NULL,
@@ -215,7 +215,7 @@ CREATE TABLE queue_reconciliations (
     claimed_at INTEGER,
     attempts INTEGER NOT NULL DEFAULT 0,
     error TEXT
-);
+, checked_at INTEGER);
 
 CREATE INDEX pending_reconciliations ON queue_reconciliations(due_at) WHERE done_at IS NULL;
 

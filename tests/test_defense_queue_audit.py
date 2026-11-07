@@ -37,6 +37,7 @@ class AuditTests(unittest.TestCase):
             self.assertEqual(con.execute('SELECT due_at FROM queue_reconciliations').fetchone()[0],860)
     def test_history_never_materializes_previously_blocked_student(self):
         self.store.create_session('other','c','g','other',starts_at=90,ends_at=190,local_date='1970-01-01',now=1)
+        self.store.attendance('other',self.cid,True,now=10)
         blocking=ops.add_to_tail(self.store,'other',self.cid,now=95,actor='admin')
         self.view()
         worker.reconcile(self.store,'s',now=800,sync=lambda:None)

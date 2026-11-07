@@ -173,3 +173,13 @@ body:has(.queue-admin) #root { width: 100%; }
 }
 
 .queue-admission-time { display: block; margin-top: 6px; font-size: 12px; }
+
+.queue-help { display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; min-height:30px; min-width:30px; padding:4px; margin-inline-start:4px; border:0; background:transparent; color:var(--queue-muted); vertical-align:middle; }
+.queue-help svg { width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:1.5; stroke-linecap:round; }
+.queue-summary.is-inactive { opacity:.55; }
+.queue-summary dt { display:flex; align-items:center; }
+.queue-correction { display:flex; align-items:center; flex-wrap:nowrap; gap:4px; margin:0; font-size:12px; }
+.queue-correction select { width:100%; min-width:0; min-height:44px; }
+@media (pointer:coarse) { .queue-help { min-width:44px; min-height:44px; } }
+
+.queue-action-hint .queue-correction { pointer-events:auto; }
