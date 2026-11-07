@@ -22,3 +22,10 @@ test("current, next and repeat states are distinct", () => {
 test("storage keys cannot collide through separators", () => {
   assert.notEqual(identityKey("a.b", "c"), identityKey("a", "b.c"));
 });
+
+test("each simultaneous defense is marked current", () => {
+  for (const entry_id of [2, 3]) {
+    assert.equal(entryLabel({ attempt: { entry_id, status: "called" } }, { current: [2, 3] }), "Сдаёт сейчас");
+  }
+  assert.equal(entryLabel({ attempt: { entry_id: 4, status: "waiting" } }, { current: [2, 3], next: 4 }), "Следующий");
+});
