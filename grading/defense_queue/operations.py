@@ -106,28 +106,34 @@ def teacher_view(store, course_id, group_id, course, *, deadlines_available, now
     active = sorted((row for row in attempts if row['status'] in ('waiting', 'called')),
                     key=lambda row: (row['is_repeat'], row['entry_id']))
     waiting = [row for row in active if row['status'] == 'waiting']
-    called = next((row for row in active if row['status'] == 'called'), None)
+    called = [row for row in active if row['status'] == 'called']
     active_order = {row['candidate_id']: index for index, row in enumerate(active)}
     entries.sort(key=lambda row: (0, active_order[row['candidate_id']]) if row['candidate_id'] in active_order else (1, row['qualified_at']))
     return dict(view, entries=entries, attempts=attempts, history=events, available_candidates=available_candidates,
-                current_entry_id=called['entry_id'] if called else None,
+                current_entry_id=called[0]['entry_id'] if called else None,
+                current_entry_ids=[row['entry_id'] for row in called],
                 next_entry_id=waiting[0]['entry_id'] if waiting else None,
                 stats={status: sum(row['status'] == status for row in attempts)
                        for status in ('waiting', 'called', 'defended', 'failed', 'no_show', 'withdrawn', 'expired')},
                 reconciliation=dict(sync) if sync else None)
 
 
-def call_next(store, session_id, *, now, actor):
+def call_next(store, session_id, *, now, actor, request_id=None):
     with store.transaction() as con:
         session = con.execute('SELECT * FROM sessions WHERE session_id=?', (session_id,)).fetchone()
         if not session or now < session['starts_at'] or session['enrollment_status'] == 'cancelled':
             raise QueueClosed('Занятие ещё не началось или отменено')
-        called = con.execute("SELECT * FROM queue_entries WHERE teacher_key=? AND status='called'", (session['teacher_key'],)).fetchone()
-        if called:
-            if called['session_id'] == session_id:
-                return called['entry_id']
-            raise QueueConflict('Преподаватель уже принимает студента другого занятия')
+        if request_id is not None:
+            if not isinstance(request_id, str) or not 1 <= len(request_id) <= 128:
+                raise ValueError('Некорректный идентификатор команды')
+            previous = con.execute('SELECT entry_id FROM queue_commands WHERE session_id=? AND actor_key=? AND request_id=?',
+                                   (session_id, actor, request_id)).fetchone()
+            if previous is not None:
+                return previous['entry_id']
         row = con.execute("SELECT * FROM queue_entries WHERE session_id=? AND status='waiting' ORDER BY is_repeat,entry_id LIMIT 1", (session_id,)).fetchone()
+        if request_id is not None:
+            con.execute('INSERT INTO queue_commands(session_id,actor_key,request_id,entry_id) VALUES (?,?,?,?)',
+                        (session_id, actor, request_id, row['entry_id'] if row else None))
         if not row:
             return None
         con.execute("UPDATE queue_entries SET status='called',called_at=?,version=version+1 WHERE entry_id=?", (now, row['entry_id']))

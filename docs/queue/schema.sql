@@ -161,8 +161,6 @@ CREATE TABLE queue_entries (
 );
 CREATE UNIQUE INDEX one_active_student_per_course
     ON queue_entries(course_id, student_id) WHERE status IN ('waiting', 'called');
-CREATE UNIQUE INDEX one_called_per_teacher
-    ON queue_entries(teacher_key) WHERE status = 'called';
 CREATE INDEX waiting_order ON queue_entries(session_id, is_repeat, (priority IS NULL), priority, entry_id)
     WHERE status = 'waiting';
 CREATE INDEX student_history ON queue_entries(course_id, student_id, joined_at);

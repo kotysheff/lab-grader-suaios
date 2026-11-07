@@ -67,7 +67,7 @@ def test_concurrent_teacher_calls_are_idempotent(queue_client):
     store.attendance('future',cid,True,now=now)
     teacher_view(store,'c','g',course,deadlines_available=True,now=now+3601,session_id='future')
     with ThreadPoolExecutor(max_workers=6) as pool:
-        results=list(pool.map(lambda _:call_next(store,'future',now=now+3601,actor='admin'),range(12)))
+        results=list(pool.map(lambda _:call_next(store,'future',now=now+3601,actor='admin',request_id='same-command'),range(12)))
     assert len(set(results))==1
     with store.connection() as con:
         assert con.execute("SELECT count(*) FROM queue_events WHERE kind='called'").fetchone()[0]==1

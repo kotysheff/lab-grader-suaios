@@ -68,11 +68,9 @@ class SchemaTests(unittest.TestCase):
         with self.assertRaises(sqlite3.IntegrityError):
             entry(self.con, "r1", group="g2")
 
-    def test_same_teacher_cannot_call_two_students(self):
+    def test_same_teacher_can_call_two_students(self):
         entry(self.con, "r1", status="called")
-        with self.assertRaises(sqlite3.IntegrityError):
-            entry(self.con, "r2", student=2, session="s2", group="g2", status="called")
-        entry(self.con, "r3", student=2, session="s3", group="g2", teacher="t2", status="called")
+        entry(self.con, "r2", student=2, session="s2", group="g2", status="called")
 
     def test_repeat_at_tail_even_with_urgent_priority(self):
         entry(self.con, "r1", student=1, priority=10)

@@ -1411,6 +1411,7 @@ class QueueActionRequest(BaseModel):
     entry_id: int | None = None
     candidate_id: int | None = None
     outcome: str | None = None
+    request_id: str | None = None
 
 
 @app.post('/admin/courses/{course_id}/groups/{group_id}/queue/actions')
@@ -1428,7 +1429,7 @@ def teacher_queue_action(request: Request, course_id: str, group_id: str, data: 
         if data.action in ('close_enrollment', 'open_enrollment'):
             op.set_enrollment(store, data.session_id, closed=data.action == 'close_enrollment', now=now, actor=admin)
         elif data.action == 'call_next':
-            op.call_next(store, data.session_id, now=now, actor=admin)
+            op.call_next(store, data.session_id, now=now, actor=admin, request_id=data.request_id)
         elif data.action == 'result' and data.entry_id is not None:
             old = next(row for row in view['attempts'] if row['entry_id'] == data.entry_id)
             op.record_result(store, data.entry_id, data.outcome, now=now, actor=admin)

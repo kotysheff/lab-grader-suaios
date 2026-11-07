@@ -39,10 +39,14 @@ class OperationsTests(unittest.TestCase):
         self.assertEqual(len(before['entries']), 3)
         self.assertEqual(before['stats']['waiting'], 2)
         eid = ops.call_next(self.store, 's', now=111, actor='admin')
-        self.assertEqual(ops.call_next(self.store, 's', now=112, actor='admin'), eid)
+        second = ops.call_next(self.store, 's', now=112, actor='admin')
+        self.assertNotEqual(second, eid)
         view = self.view()
         self.assertEqual(view['current_entry_id'], eid)
-        self.assertNotEqual(view['next_entry_id'], eid)
+        self.assertEqual(view['current_entry_ids'], [eid, second])
+        self.assertIsNone(view['next_entry_id'])
+        ops.record_result(self.store, second, 'defended', now=113, actor='admin')
+        self.assertEqual(self.view()['current_entry_ids'], [eid])
 
     def test_failed_retry_tail_and_idempotency(self):
         self.view()
