@@ -1,5 +1,4 @@
--- Design executable in isolation. Not a migration applied to the application.
-PRAGMA foreign_keys = ON;
+-- Снимок схемы после миграций 001–005. Проверяется test_documented_schema_matches_migrations.
 
 CREATE TABLE courses (
     course_id TEXT PRIMARY KEY NOT NULL,
@@ -55,6 +54,7 @@ CREATE TABLE schedule_overrides (
         OR (kind IN ('add_session', 'move_session') AND starts_at IS NOT NULL AND ends_at IS NOT NULL AND starts_at < ends_at)),
     CHECK (kind != 'move_session' OR target_session_id IS NOT NULL)
 );
+
 CREATE UNIQUE INDEX one_enabled_cancel_per_session
     ON schedule_overrides(target_session_id)
     WHERE enabled = 1 AND kind = 'cancel_session';
@@ -83,6 +83,7 @@ CREATE TABLE sessions (
     FOREIGN KEY (course_id, group_id) REFERENCES study_groups(course_id, group_id),
     CHECK (opens_at <= starts_at AND starts_at < ends_at AND ends_at <= expires_at)
 );
+
 CREATE INDEX sessions_by_group_date ON sessions(course_id, group_id, local_date);
 
 CREATE TABLE queue_candidates (
@@ -99,6 +100,7 @@ CREATE TABLE queue_candidates (
     UNIQUE (candidate_id, course_id, group_id, student_id),
     FOREIGN KEY (course_id, group_id) REFERENCES study_groups(course_id, group_id)
 );
+
 CREATE UNIQUE INDEX one_eligible_candidate_per_course
     ON queue_candidates(course_id, student_id) WHERE status='eligible';
 
@@ -120,6 +122,7 @@ CREATE TABLE session_participation (
     FOREIGN KEY (session_id, course_id, group_id, teacher_key)
         REFERENCES sessions(session_id, course_id, group_id, teacher_key)
 );
+
 CREATE TRIGGER frozen_participation BEFORE UPDATE ON session_participation
 WHEN OLD.frozen_at IS NOT NULL AND NEW.will_attend != OLD.will_attend
 BEGIN SELECT RAISE(ABORT, 'attendance is frozen for this session'); END;
@@ -159,12 +162,13 @@ CREATE TABLE queue_entries (
     CHECK (called_at IS NULL OR called_at >= joined_at),
     CHECK (closed_at IS NULL OR closed_at >= joined_at)
 );
+
 CREATE UNIQUE INDEX one_active_student_per_course
     ON queue_entries(course_id, student_id) WHERE status IN ('waiting', 'called');
-CREATE UNIQUE INDEX one_called_per_teacher
-    ON queue_entries(teacher_key) WHERE status = 'called';
+
 CREATE INDEX waiting_order ON queue_entries(session_id, is_repeat, (priority IS NULL), priority, entry_id)
     WHERE status = 'waiting';
+
 CREATE INDEX student_history ON queue_entries(course_id, student_id, joined_at);
 
 CREATE TABLE queue_events (
@@ -182,19 +186,52 @@ CREATE TABLE queue_events (
     CHECK (json_valid(details_json)),
     CHECK (session_id IS NOT NULL OR candidate_id IS NOT NULL)
 );
+
 CREATE INDEX events_by_session ON queue_events(session_id, event_id);
+
 CREATE TRIGGER immutable_event_update BEFORE UPDATE ON queue_events
 BEGIN SELECT RAISE(ABORT, 'queue events are append-only'); END;
+
 CREATE TRIGGER immutable_event_delete BEFORE DELETE ON queue_events
 BEGIN SELECT RAISE(ABORT, 'queue events are append-only'); END;
+
 CREATE TRIGGER event_entry_session BEFORE INSERT ON queue_events
 WHEN NEW.entry_id IS NOT NULL AND NOT EXISTS (
     SELECT 1 FROM queue_entries WHERE entry_id = NEW.entry_id AND session_id = NEW.session_id
 )
 BEGIN SELECT RAISE(ABORT, 'event session differs from entry session'); END;
 
--- One transaction: change entry + append event + COMMIT, or roll everything back.
--- Connection setup (not a substitute for a persistent local filesystem):
--- PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;
--- PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;
--- Set user_version only as part of an actual reviewed migration, not this design file.
+CREATE TABLE queue_settings (
+    course_id TEXT PRIMARY KEY REFERENCES courses(course_id),
+    random_override INTEGER NOT NULL DEFAULT 0 CHECK(random_override IN (0,1)),
+    deadlines_json TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(deadlines_json)),
+    updated_at INTEGER NOT NULL
+, schedule_json TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(schedule_json)), policy_override_set INTEGER NOT NULL DEFAULT 0 CHECK(policy_override_set IN (0,1)));
+
+CREATE TABLE queue_reconciliations (
+    session_id TEXT PRIMARY KEY REFERENCES sessions(session_id),
+    due_at INTEGER NOT NULL,
+    done_at INTEGER,
+    claimed_at INTEGER,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    error TEXT
+);
+
+CREATE INDEX pending_reconciliations ON queue_reconciliations(due_at) WHERE done_at IS NULL;
+
+CREATE TABLE queue_sync_state (
+    course_id TEXT NOT NULL,
+    group_id TEXT NOT NULL,
+    summary_json TEXT NOT NULL CHECK(json_valid(summary_json)),
+    checked_at INTEGER NOT NULL,
+    PRIMARY KEY(course_id,group_id),
+    FOREIGN KEY(course_id,group_id) REFERENCES study_groups(course_id,group_id)
+);
+
+CREATE TABLE queue_commands (
+ session_id TEXT NOT NULL REFERENCES sessions(session_id),
+ actor_key TEXT NOT NULL,
+ request_id TEXT NOT NULL,
+ entry_id INTEGER REFERENCES queue_entries(entry_id),
+ PRIMARY KEY(session_id, actor_key, request_id)
+);

@@ -25,6 +25,14 @@ def queue_store():
     return _store(os.getenv('QUEUE_DB_PATH', 'data/queue.sqlite3'))
 
 
+def saved_deadlines_available(store, course_id, group_id):
+    with store.connection() as con:
+        saved = con.execute('SELECT summary_json FROM queue_sync_state WHERE course_id=? AND group_id=?',(course_id,group_id)).fetchone()
+        if saved:
+            return bool(json.loads(saved[0])['deadlines_available'])
+        return all(row[0] for row in con.execute("SELECT deadline_available FROM queue_candidates WHERE course_id=? AND group_id=? AND status='eligible'",(course_id,group_id)))
+
+
 def sync_queue(course_id, group_id, course, *, fetch_grid, parse_deadline, force=False):
     if not course.get('queue', {}).get('enabled', False):
         raise ValueError('Очередь не включена для курса')
@@ -42,7 +50,7 @@ def sync_queue(course_id, group_id, course, *, fetch_grid, parse_deadline, force
         now = int(time.time())
         with store.connection() as con:
             started = con.execute("SELECT session_id FROM sessions WHERE course_id=? AND group_id=? AND starts_at<=? AND enrollment_status!='cancelled'", (course_id, group_id, now)).fetchall()
-            available = all(row[0] for row in con.execute("SELECT deadline_available FROM queue_candidates WHERE course_id=? AND group_id=? AND status='eligible'", (course_id, group_id)))
+        available = saved_deadlines_available(store, course_id, group_id)
         for session in started:
             queue_view(store, course_id, group_id, course, deadlines_available=available, now=now, session_id=session[0])
         # Сеть вызывается вне транзакций SQLite.
@@ -127,8 +135,9 @@ def queue_view(store, course_id, group_id, course, *, deadlines_available, now, 
             position += 1
         entries.append({'candidate_id': row['candidate_id'], 'full_name': row['full_name'],
                         'github': row['github_login'], 'lab_key': row['lab_key'],
-                        'qualified_at': row['qualified_at'], 'priority': None if candidate.deadline is None else priority_for(candidate.deadline, datetime.fromtimestamp(session['starts_at'], timezone.utc), week_anchor=anchor, timezone=zone), 'will_attend': bool(row['will_attend']),
+                        'qualified_at': row['qualified_at'], 'deadline_at': row['deadline_at'], 'deadline_available': bool(row['deadline_available']), 'priority': None if candidate.deadline is None else priority_for(candidate.deadline, datetime.fromtimestamp(session['starts_at'], timezone.utc), week_anchor=anchor, timezone=zone), 'will_attend': bool(row['will_attend']),
                         'answered': bool(row['attendance_answered']),
+                        'attendance_at': row['attendance_at'] if row['attendance_answered'] else None,
                         'position': position if row['will_attend'] else None,
                         'state': 'attending' if row['will_attend'] else 'declined' if row['attendance_answered'] else 'unconfirmed'})
     result = {'session': dict(session), 'mode': mode.name, 'mode_locked': mode.locked,

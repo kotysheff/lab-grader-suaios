@@ -480,7 +480,7 @@ export const CourseList = ({ onSelectCourse, isAdmin = false }) => {
                   >
                     {t("manageLabs")}
                   </Button>
-                  <Button onClick={() => navigate(`/admin/courses/${course.id}/queue`)}>Очередь защит</Button>
+                  <Button onClick={() => navigate(`/admin/courses/${course.id}/queue`)}>{t("defenseQueue")}</Button>
 
                   <Button
                     onClick={() => handleDeleteConfirmation(course.id)}

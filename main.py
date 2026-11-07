@@ -159,7 +159,7 @@ def _start_background_job(func, *args, name: str) -> None:
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 ADMIN_LOGIN = os.getenv("ADMIN_LOGIN")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
-SECRET_KEY = os.getenv("SECRET_KEY", "super-secret-key")
+SECRET_KEY = os.getenv("SECRET_KEY")
 
 # GitHub OAuth App for the /join student repo creation flow (see docs/REPO_GENERATION_PLAN.md).
 # Optional: existing deployments that don't use this feature can leave these unset;
@@ -202,6 +202,9 @@ if not ADMIN_LOGIN or not ADMIN_PASSWORD:
         "Приложение не может быть запущено без корректной конфигурации безопасности."
     )
 
+if not SECRET_KEY or SECRET_KEY == "super-secret-key":
+    raise RuntimeError("Задайте собственный SECRET_KEY: публичный ключ по умолчанию небезопасен")
+
 if not GITHUB_TOKEN:
     raise RuntimeError(
         "GITHUB_TOKEN должен быть установлен в переменных окружения. "
@@ -209,7 +212,11 @@ if not GITHUB_TOKEN:
     )
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Разрешить запросы с любых источников
+    allow_origins=list(dict.fromkeys(value.rstrip('/') for value in (
+        FRONTEND_URL, PUBLIC_BASE_URL,
+        'http://localhost:5173', 'http://localhost:8080',
+        'http://127.0.0.1:5173', 'http://127.0.0.1:8080',
+    ) if value)),  # Cookie преподавателя доступны только согласованным frontend-origin.
     allow_credentials=True,
     allow_methods=["*"],  # Разрешить все HTTP-методы
     allow_headers=["*"],  # Разрешить все заголовки
@@ -422,7 +429,8 @@ def admin_login(request: Request, data: AuthRequest, response: Response):
             httponly=True,
             max_age=3600,
             path="/",
-            secure=False
+            secure=request.url.scheme == "https",
+            samesite="lax"
         )
         return {"authenticated": True}
     raise HTTPException(status_code=401, detail="Неверный логин или пароль")
@@ -1189,6 +1197,7 @@ def grade_lab(request: Request, course_id: str, group_id: str, lab_id: str, grad
 # Очередь защиты: включается для курса через queue.enabled.
 def _sync_defense_queue(course_id, group_id, course, *, sheet=None, force=False):
     from grading.defense_queue.runtime import sync_queue
+    from grading.defense_queue.sync import parse_queue_deadline
     from grading.sheets_client import parse_deadline
     if course.get('queue', {}).get('enabled'):
         _ensure_queue_worker()
@@ -1211,7 +1220,7 @@ def _sync_defense_queue(course_id, group_id, course, *, sheet=None, force=False)
         return target.get_all_values()
 
     return sync_queue(course_id, group_id, public_course, fetch_grid=fetch_grid,
-                      parse_deadline=lambda value: parse_deadline(value, course.get('timezone')),
+                      parse_deadline=lambda value: parse_queue_deadline(value, course, parse_deadline),
                       force=force)
 
 
@@ -1367,7 +1376,18 @@ def list_teacher_queue_sessions(request: Request, admin: str = Depends(require_a
     with store.connection() as con:
         rows = con.execute('''SELECT s.*,c.title AS course_title FROM sessions s JOIN courses c USING(course_id)
                               ORDER BY starts_at DESC LIMIT 500''').fetchall()
-    return [dict(row) for row in rows]
+    from grading.defense_queue.operations import effective_course
+    courses = {}
+    result = []
+    for row in rows:
+        cid = row['course_id']
+        if cid not in courses:
+            try: courses[cid] = effective_course(store,cid,get_course_by_id(cid))
+            except HTTPException: courses[cid] = {}
+        course = courses[cid]
+        schedule = course.get('queue',{}).get('schedule',{}).get(row['group_id'],{})
+        result.append(dict(row, university=schedule.get('university') or course.get('university','')))
+    return result
 
 
 @app.get('/admin/courses/{course_id}/groups/{group_id}/queue')
@@ -1391,6 +1411,7 @@ class QueueActionRequest(BaseModel):
     entry_id: int | None = None
     candidate_id: int | None = None
     outcome: str | None = None
+    request_id: str | None = None
 
 
 @app.post('/admin/courses/{course_id}/groups/{group_id}/queue/actions')
@@ -1408,7 +1429,7 @@ def teacher_queue_action(request: Request, course_id: str, group_id: str, data: 
         if data.action in ('close_enrollment', 'open_enrollment'):
             op.set_enrollment(store, data.session_id, closed=data.action == 'close_enrollment', now=now, actor=admin)
         elif data.action == 'call_next':
-            op.call_next(store, data.session_id, now=now, actor=admin)
+            op.call_next(store, data.session_id, now=now, actor=admin, request_id=data.request_id)
         elif data.action == 'result' and data.entry_id is not None:
             old = next(row for row in view['attempts'] if row['entry_id'] == data.entry_id)
             op.record_result(store, data.entry_id, data.outcome, now=now, actor=admin)
@@ -1461,8 +1482,9 @@ def set_queue_settings(request: Request, course_id: str, data: QueueSettingsRequ
         store, course, _ = _queue_admin_context(course_id)
         if any(key not in course.get('labs', {}) for key in data.deadlines):
             raise ValueError('Дедлайн задан для неизвестной работы')
+        from grading.defense_queue.sync import parse_queue_deadline
         for value in data.deadlines.values():
-            if value is not None and parse_deadline(value, course.get('timezone')) is None:
+            if value is not None and parse_queue_deadline(value, course, parse_deadline) is None:
                 raise ValueError('Дата должна иметь формат ГГГГ-ММ-ДД или ДД.ММ.ГГГГ')
         # Обеспечить наличие родительского курса без чтения внешней таблицы.
         from grading.defense_queue.sync import course_timezone

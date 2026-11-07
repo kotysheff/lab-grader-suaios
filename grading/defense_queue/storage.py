@@ -3,6 +3,7 @@ from contextlib import contextmanager
 from pathlib import Path
 import secrets
 import sqlite3
+import threading
 
 
 class QueueClosed(ValueError):
@@ -15,16 +16,17 @@ class QueueConflict(ValueError):
 
 class QueueStore:
     def __init__(self, path: str | Path):
+        self._local = threading.local()
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.connection() as con:
             con.execute("BEGIN IMMEDIATE")
             try:
                 version = con.execute("PRAGMA user_version").fetchone()[0]
-                if version > 4:
+                if version > 5:
                     raise ValueError("Версия базы очереди новее поддерживаемой")
                 migrations = Path(__file__).with_name("migrations")
-                for target in range(version + 1, 5):
+                for target in range(version + 1, 6):
                     path = next(migrations.glob(f"{target:03d}_*.sql"))
                     statement = ""
                     for line in path.read_text().splitlines(keepends=True):
@@ -42,6 +44,10 @@ class QueueStore:
 
     @contextmanager
     def connection(self):
+        active = getattr(self._local, "transaction", None)
+        if active is not None:
+            yield active
+            return
         con = sqlite3.connect(self.path, timeout=5, isolation_level=None)
         con.row_factory = sqlite3.Row
         con.execute("PRAGMA foreign_keys=ON")
@@ -54,14 +60,22 @@ class QueueStore:
 
     @contextmanager
     def transaction(self):
+        # Вложенные операции группы присоединяются к общей атомарной записи.
+        active = getattr(self._local, 'transaction', None)
+        if active is not None:
+            yield active
+            return
         with self.connection() as con:
             con.execute("BEGIN IMMEDIATE")
+            self._local.transaction = con
             try:
                 yield con
                 con.commit()
             except Exception:
                 con.rollback()
                 raise
+            finally:
+                del self._local.transaction
 
     @staticmethod
     def event(con, candidate_id, kind, now, *, session_id=None, actor="system", actor_key="queue"):
@@ -138,7 +152,7 @@ class QueueStore:
                 raise ValueError("Занятие не найдено")
             rows = con.execute("""SELECT c.*,s.full_name,s.github_login,
                 COALESCE(p.will_attend,0) AS will_attend,COALESCE(p.attendance_answered,0) AS attendance_answered,
-                p.random_key,p.frozen_at FROM queue_candidates c JOIN students s USING(student_id)
+                p.random_key,p.frozen_at,p.updated_at AS attendance_at FROM queue_candidates c JOIN students s USING(student_id)
                 LEFT JOIN session_participation p ON p.candidate_id=c.candidate_id AND p.session_id=?
                 WHERE c.course_id=? AND c.group_id=? AND c.status='eligible'
                 ORDER BY c.qualified_at,c.candidate_id""", (session_id, session['course_id'], session['group_id'])).fetchall()

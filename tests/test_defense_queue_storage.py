@@ -90,10 +90,18 @@ class StorageTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             QueueStore(self.path)
 
-    def test_documented_schema_matches_migration(self):
+    def test_documented_schema_matches_migrations(self):
         root = Path(__file__).parents[1]
-        self.assertEqual((root / 'docs/queue/schema.sql').read_bytes(),
-                         (root / 'grading/defense_queue/migrations/001_initial.sql').read_bytes())
+        import sqlite3
+        snapshot = sqlite3.connect(':memory:')
+        try:
+            snapshot.executescript((root / 'docs/queue/schema.sql').read_text())
+            def objects(con):
+                return {tuple(row) for row in con.execute("SELECT type,name,sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%'")}
+            with self.store.connection() as con:
+                self.assertEqual(objects(snapshot), objects(con))
+        finally:
+            snapshot.close()
 
 
 if __name__ == '__main__':

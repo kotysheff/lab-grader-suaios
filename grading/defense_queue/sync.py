@@ -1,5 +1,6 @@
 """Синхронизация прочитанной таблицы: сетевой доступ и запись оценок отсутствуют."""
 import re
+from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from .sheet_state import first_admitted_lab, parse_lab_cell, read_deadline
@@ -14,7 +15,22 @@ def course_timezone(course):
     return value
 
 
+def parse_queue_deadline(value, course, parse):
+    parsed = parse(value)
+    if parsed is None:
+        try: parsed = datetime.fromisoformat(value)
+        except (ValueError, TypeError): return None
+    if parsed.utcoffset() is None:
+        parsed = parsed.replace(tzinfo=ZoneInfo(course_timezone(course)))
+    return parsed
+
+
 def sync_group(store, course_id, group_id, course, grid, *, parse_deadline, now):
+    with store.transaction():
+        return _sync_group(store, course_id, group_id, course, grid, parse_deadline=parse_deadline, now=now)
+
+
+def _sync_group(store, course_id, group_id, course, grid, *, parse_deadline, now):
     def cell(row, col):
         return grid[row - 1][col - 1].strip() if row <= len(grid) and col <= len(grid[row - 1]) else ''
 

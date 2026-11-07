@@ -38,11 +38,43 @@ class OperationsTests(unittest.TestCase):
         before = self.view()
         self.assertEqual(len(before['entries']), 3)
         self.assertEqual(before['stats']['waiting'], 2)
+        self.assertEqual(before['entries'][0]['attempt']['joined_at'], 10)
+        self.assertEqual(before['entries'][0]['attendance_at'], 10)
         eid = ops.call_next(self.store, 's', now=111, actor='admin')
-        self.assertEqual(ops.call_next(self.store, 's', now=112, actor='admin'), eid)
+        second = ops.call_next(self.store, 's', now=112, actor='admin')
+        self.assertNotEqual(second, eid)
         view = self.view()
         self.assertEqual(view['current_entry_id'], eid)
-        self.assertNotEqual(view['next_entry_id'], eid)
+        self.assertEqual(view['current_entry_ids'], [eid, second])
+        self.assertIsNone(view['next_entry_id'])
+        ops.record_result(self.store, second, 'defended', now=113, actor='admin')
+        self.assertEqual(self.view()['current_entry_ids'], [eid])
+
+    def test_upgrade_v4_keeps_called_and_allows_another_defense(self):
+        self.view()
+        first = ops.call_next(self.store, 's', now=111, actor='admin')
+        with self.store.transaction() as con:
+            con.execute('DROP TABLE queue_commands')
+            con.execute("CREATE UNIQUE INDEX one_called_per_teacher ON queue_entries(teacher_key) WHERE status='called'")
+            con.execute('PRAGMA user_version=4')
+        self.store = Store(self.store.path)
+        second = ops.call_next(self.store, 's', now=112, actor='admin', request_id='second')
+        self.assertEqual(ops.call_next(self.store, 's', now=113, actor='admin', request_id='second'), second)
+        self.assertEqual(self.view()['current_entry_ids'], [first, second])
+        with self.store.connection() as con:
+            self.assertEqual(con.execute('PRAGMA user_version').fetchone()[0], 5)
+
+    def test_parallel_distinct_calls_never_call_same_student_twice(self):
+        from concurrent.futures import ThreadPoolExecutor
+        self.view()
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            results = list(pool.map(lambda i: ops.call_next(self.store, 's', now=111, actor='admin', request_id=f'command-{i}'), range(8)))
+        called = [entry_id for entry_id in results if entry_id is not None]
+        self.assertEqual(len(called), 2)
+        self.assertEqual(len(set(called)), 2)
+        self.assertEqual(set(self.view()['current_entry_ids']), set(called))
+        with self.store.connection() as con:
+            self.assertEqual(con.execute("SELECT count(*) FROM queue_events WHERE kind='called'").fetchone()[0], 2)
 
     def test_failed_retry_tail_and_idempotency(self):
         self.view()
