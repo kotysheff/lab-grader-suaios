@@ -177,5 +177,6 @@
   "Проверьте заполненные поля и даты, затем повторите действие.": "Check the fields and dates, then try again.",
   "Источник данных недоступен. Сохранённый список доступен; повторите позже.": "The data source is unavailable. The saved roster is available; try again later.",
   "Не удалось связаться с сервером. Проверьте соединение и повторите действие.": "Could not reach the server. Check your connection and try again.",
-  "Применена поправка расписания": "Schedule override applied"
+  "Применена поправка расписания": "Schedule override applied",
+  "Записался": "Joined"
 }

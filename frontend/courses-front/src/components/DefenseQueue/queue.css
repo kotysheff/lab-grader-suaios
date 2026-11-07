@@ -171,3 +171,5 @@ body:has(.queue-admin) #root { width: 100%; }
   .queue-table tr.current { outline: 2px solid Highlight; }
   .queue-status.is-current { text-decoration: underline; }
 }
+
+.queue-admission-time { display: block; margin-top: 6px; font-size: 12px; }

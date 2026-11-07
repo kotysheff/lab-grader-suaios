@@ -44,7 +44,7 @@ def _insert_attempt(con, candidate, session, *, request_key, repeat, now, rank=N
         VALUES (?,?,?,?,?,?,?,?,?,?,?,'admitted',?,?,?,?,?,?) ON CONFLICT(request_key) DO NOTHING''',
         (request_key, session['session_id'], session['course_id'], session['group_id'], session['teacher_key'],
          candidate['student_id'], candidate['candidate_id'], candidate['lab_key'], candidate['lab_order'],
-         snapshot['full_name'] if snapshot else student['full_name'], snapshot['github'] if snapshot else student['github_login'], now, candidate['deadline_at'], candidate['deadline_available'], rank, int(repeat), now))
+         snapshot['full_name'] if snapshot else student['full_name'], snapshot['github'] if snapshot else student['github_login'], now, candidate['deadline_at'], candidate['deadline_available'], rank, int(repeat), (snapshot.get('attendance_at') or now) if snapshot else now))
     return cursor.lastrowid
 
 

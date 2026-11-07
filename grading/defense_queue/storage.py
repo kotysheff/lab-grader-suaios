@@ -152,7 +152,7 @@ class QueueStore:
                 raise ValueError("Занятие не найдено")
             rows = con.execute("""SELECT c.*,s.full_name,s.github_login,
                 COALESCE(p.will_attend,0) AS will_attend,COALESCE(p.attendance_answered,0) AS attendance_answered,
-                p.random_key,p.frozen_at FROM queue_candidates c JOIN students s USING(student_id)
+                p.random_key,p.frozen_at,p.updated_at AS attendance_at FROM queue_candidates c JOIN students s USING(student_id)
                 LEFT JOIN session_participation p ON p.candidate_id=c.candidate_id AND p.session_id=?
                 WHERE c.course_id=? AND c.group_id=? AND c.status='eligible'
                 ORDER BY c.qualified_at,c.candidate_id""", (session_id, session['course_id'], session['group_id'])).fetchall()

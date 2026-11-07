@@ -137,6 +137,7 @@ def queue_view(store, course_id, group_id, course, *, deadlines_available, now, 
                         'github': row['github_login'], 'lab_key': row['lab_key'],
                         'qualified_at': row['qualified_at'], 'deadline_at': row['deadline_at'], 'deadline_available': bool(row['deadline_available']), 'priority': None if candidate.deadline is None else priority_for(candidate.deadline, datetime.fromtimestamp(session['starts_at'], timezone.utc), week_anchor=anchor, timezone=zone), 'will_attend': bool(row['will_attend']),
                         'answered': bool(row['attendance_answered']),
+                        'attendance_at': row['attendance_at'] if row['attendance_answered'] else None,
                         'position': position if row['will_attend'] else None,
                         'state': 'attending' if row['will_attend'] else 'declined' if row['attendance_answered'] else 'unconfirmed'})
     result = {'session': dict(session), 'mode': mode.name, 'mode_locked': mode.locked,

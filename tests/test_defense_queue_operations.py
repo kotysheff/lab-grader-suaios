@@ -38,6 +38,8 @@ class OperationsTests(unittest.TestCase):
         before = self.view()
         self.assertEqual(len(before['entries']), 3)
         self.assertEqual(before['stats']['waiting'], 2)
+        self.assertEqual(before['entries'][0]['attempt']['joined_at'], 10)
+        self.assertEqual(before['entries'][0]['attendance_at'], 10)
         eid = ops.call_next(self.store, 's', now=111, actor='admin')
         second = ops.call_next(self.store, 's', now=112, actor='admin')
         self.assertNotEqual(second, eid)
