@@ -12,6 +12,7 @@ from urllib.parse import parse_qs, urlparse
 from zoneinfo import ZoneInfo
 
 from .sync import course_timezone
+from .schedule_sources import adapter
 
 DAYS = ('понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота', 'воскресенье')
 SLOTS = (('09:30','11:00'), ('11:10','12:40'), ('13:00','14:30'), ('15:10','16:40'),
@@ -119,14 +120,6 @@ def normalize_lessons(lessons):
 
 def validate_schedule(config):
     if not isinstance(config, dict): raise ValueError('Расписание должно быть объектом')
-    if config.get('source', 'manual') not in ('manual', 'suai', 'import'):
-        raise ValueError('Источник: manual, suai или import')
-    if config.get('source') == 'suai':
-        if not re.fullmatch(r'[0-9]{1,20}', str(config.get('group_id', ''))): raise ValueError('Нужен числовой ID группы на сайте ГУАП')
-        if not isinstance(config.get('subject'),str) or not config['subject'].strip(): raise ValueError('Нужно точное название предмета')
-        try: anchor = date.fromisoformat(config.get('week_anchor', ''))
-        except (TypeError,ValueError): raise ValueError('Нужна дата начала нечётной недели') from None
-        if anchor.weekday() != 0: raise ValueError('Начало первой нечётной недели должно быть понедельником')
     if not isinstance(config.get('lessons', []), list): raise ValueError('lessons должен быть массивом')
     if len(config.get('lessons', [])) > 500: raise ValueError('В одном импорте допускается до 500 занятий')
     if config.get('semester_end'):
@@ -135,6 +128,7 @@ def validate_schedule(config):
     for field in ('kind','teacher_id','teacher_key','university'):
         if field in config and not isinstance(config[field],str): raise ValueError(f'{field}: нужна строка')
     normalize_lessons(config.get('lessons',[]))
+    adapter(config.get('source', 'manual')).validate(config)
     return config
 
 
@@ -195,8 +189,15 @@ def import_sessions(store, course_id, group_id, course, lessons, *, now):
 def refresh_schedule(store, course_id, group_id, course, *, fetch, now):
     config = course.get('queue', {}).get('schedule', {}).get(group_id, {})
     validate_schedule(config)
-    lessons = list(config.get('lessons', []))
-    if config.get('source') == 'suai':
-        html = fetch(f'https://guap.ru/rasp/?gr={config["group_id"]}')
-        lessons += expand_suai(parse_suai(html), config, now=now, timezone=course_timezone(course))
-    return import_sessions(store, course_id, group_id, course, lessons, now=now)
+    from .schedule_overrides import validate_overrides, apply_overrides
+    overrides = validate_overrides(course.get('queue', {}).get('schedule_overrides', []))
+    try:
+        lessons = adapter(config.get('source', 'manual')).load(config, fetch=fetch, now=now, timezone=course_timezone(course))
+    except Exception:
+        # Ручные отмены и добавления действуют даже при недоступном вузовском сайте.
+        apply_overrides(store, course_id, group_id, course, overrides, now=now)
+        raise
+    with store.transaction():
+        count = import_sessions(store, course_id, group_id, course, lessons, now=now)
+        apply_overrides(store, course_id, group_id, course, overrides, now=now)
+    return count

@@ -57,6 +57,9 @@ class QueueWorker:
             with self.store.connection() as con:
                 groups = {r[0] for r in con.execute('SELECT group_id FROM study_groups WHERE course_id=?', (course_id,))}
             groups.update(course.get('queue', {}).get('schedule', {}))
+            from .schedule_overrides import validate_overrides
+            for override in validate_overrides(course.get('queue', {}).get('schedule_overrides', [])):
+                groups.update(override['groups'])
             for group_id in groups:
                 try:
                     key = (course_id,group_id)

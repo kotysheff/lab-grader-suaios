@@ -114,4 +114,81 @@ class ScheduleTests(unittest.TestCase):
             self.assertEqual(con.execute('SELECT done_at FROM queue_reconciliations').fetchone()[0],800)
         self.assertTrue(any(c.get('force') for c in calls))
 
+
+class ScheduleExtensionTests(unittest.TestCase):
+    setUp = ScheduleTests.setUp
+    tearDown = ScheduleTests.tearDown
+    def test_new_university_module_without_core_change(self):
+        module = types.ModuleType(PACKAGE + '.schedule_sources.test_university')
+        seen = []
+        module.validate = lambda config: seen.append(config['campus'])
+        module.load = lambda config, **kwargs: [dict(key='other:1', starts_at=100, ends_at=200)]
+        sys.modules[module.__name__] = module
+        try:
+            self.course['queue']['schedule'] = {'g': {'source': 'test_university', 'campus': 'north'}}
+            schedule.refresh_schedule(self.store, 'c', 'g', self.course, fetch=lambda url: self.fail('No network expected'), now=1)
+            self.assertEqual(seen, ['north'])
+            with self.store.connection() as con:
+                self.assertEqual(con.execute('SELECT source_key FROM sessions').fetchone()[0], 'other:1')
+            for source in ('os', '../os', 'a.b', '__init__'):
+                with self.assertRaises(ValueError): schedule.validate_schedule({'source': source})
+        finally:
+            del sys.modules[module.__name__]
+
+    def configured(self):
+        self.course['queue'] = {'schedule': {group: {'source': 'manual', 'lessons': [
+            dict(key='base', starts_at=100, ends_at=200)]} for group in ('g', 'g2')},
+            'schedule_overrides': [
+                dict(key='cancel-day', kind='cancel', groups=['g', 'g2'], date='1970-01-01'),
+                dict(key='extra', kind='add', groups=['g', 'g2'], starts_at=300, ends_at=400)]}
+        return self.course
+
+    def test_overrides_multiple_groups_and_repeated_refresh(self):
+        self.configured()
+        for now in (1, 2, 3):
+            for group in ('g', 'g2'):
+                schedule.refresh_schedule(self.store, 'c', group, self.course, fetch=None, now=now)
+        with self.store.connection() as con:
+            rows = con.execute('SELECT group_id,source_key,enrollment_status FROM sessions ORDER BY group_id,source_key').fetchall()
+            self.assertEqual([tuple(r) for r in rows], [('g','base','cancelled'),('g','override:extra','scheduled'),('g2','base','cancelled'),('g2','override:extra','scheduled')])
+            self.assertEqual(con.execute("SELECT count(*) FROM queue_events WHERE kind='config_schedule_override'").fetchone()[0], 2)
+
+    def test_overrides_work_when_university_is_down(self):
+        self.configured()
+        schedule.refresh_schedule(self.store,'c','g',self.course,fetch=None,now=1)
+        self.course['queue']['schedule']['g'] = {'source':'suai','group_id':'100','subject':'Subject','week_anchor':'2026-09-07'}
+        self.course['queue']['schedule_overrides'].append(dict(key='extra2',kind='add',groups=['g'],starts_at=500,ends_at=600))
+        def down(url): raise OSError('offline')
+        with self.assertRaises(OSError):
+            schedule.refresh_schedule(self.store,'c','g',self.course,fetch=down,now=2)
+        with self.store.connection() as con:
+            self.assertEqual(con.execute("SELECT count(*) FROM sessions WHERE source_kind='extra'").fetchone()[0],2)
+
+    def test_bad_overrides_do_not_partially_import(self):
+        self.configured()
+        self.course['queue']['schedule_overrides'].append(dict(key='bad',kind='add',groups=['g'],starts_at=300,ends_at=100))
+        with self.assertRaises(ValueError):
+            schedule.refresh_schedule(self.store,'c','g',self.course,fetch=None,now=1)
+        with self.store.connection() as con:
+            self.assertEqual(con.execute('SELECT count(*) FROM sessions').fetchone()[0],0)
+
+    def test_config_move_keeps_identity_and_manual_move_wins(self):
+        self.course['queue']['schedule'] = {'g':{'source':'manual','lessons':[dict(key='base',starts_at=100,ends_at=200)]}}
+        schedule.refresh_schedule(self.store,'c','g',self.course,fetch=None,now=1)
+        with self.store.connection() as con: sid=con.execute('SELECT session_id FROM sessions').fetchone()[0]
+        student=self.store.student('Student','student',now=1)
+        cid=self.store.qualify('c','g',student,'1',1,deadline_at=None,now=1)
+        self.store.attendance(sid,cid,True,now=2)
+        self.course['queue']['schedule_overrides']=[dict(key='move',kind='move',source_key='base',groups=['g'],starts_at=300,ends_at=400)]
+        for now in (3,4): schedule.refresh_schedule(self.store,'c','g',self.course,fetch=None,now=now)
+        with self.store.connection() as con:
+            row=con.execute('SELECT * FROM sessions').fetchone()
+            self.assertEqual((row['session_id'],row['starts_at'],row['schedule_revision']),(sid,300,2))
+            self.assertEqual(con.execute('SELECT will_attend FROM session_participation').fetchone()[0],1)
+        ops.move_session(self.store,sid,starts_at=500,ends_at=600,local_date='1970-01-01',now=5,actor='admin')
+        self.course['queue']['schedule_overrides'][0].update(starts_at=700,ends_at=800)
+        schedule.refresh_schedule(self.store,'c','g',self.course,fetch=None,now=6)
+        with self.store.connection() as con:
+            self.assertEqual(con.execute('SELECT starts_at FROM sessions').fetchone()[0],500)
+
 if __name__ == '__main__': unittest.main()
