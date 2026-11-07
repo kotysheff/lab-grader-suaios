@@ -1,4 +1,4 @@
-import { Help } from "./Help";
+import { Hint } from "./Hint";
 import { queueError, q, useQueueLanguage } from "./locale";
 import { useState } from "react";
 import { queueGroupPath, queueRequest } from "../../api";
@@ -54,12 +54,22 @@ export function StudentQueue({
     }
   }
   if (error?.status === 404) return <p className="queue-muted">{q("Для этого предмета очередь пока не включена.")}</p>;
-  return <section className="queue-surface" style={queueAppearance} aria-label={q("Список на занятие")}>
+  return <section className="queue-surface queue-student" style={queueAppearance} aria-label={q("Список на занятие")}>
     <h2>{q("Ближайшее занятие")}</h2>
     {data?.session ? <p><strong>{displayDate(data.session.starts_at, data.session.timezone)}</strong><br /><small>{q("Группа")} {groupId} · {data.mode === "random" ? q("Случайный порядок") : q("Приоритет по дедлайнам, от −1")}</small></p> : data ? <p>{q("Будущее занятие пока не назначено. Список допущенных работ доступен ниже.")}</p> : !error && <p role="status">{q("Загружается список…")}</p>}
     {error && <div className="queue-notice queue-error" role="alert">{queueError(error)} <button onClick={refresh}>{q("Повторить")}</button></div>}
     {data?.stale && <p className="queue-notice">{q("Таблица временно недоступна. Показан сохранённый список; изменение посещения появится после обновления.")}</p>}
     {checking && <p className="queue-notice" role="status">{q("Работа проверяется. Предварительная позиция не резервирует место.")}</p>}
+    {me && <div className="queue-notice queue-attendance">
+      <strong><Hint text="По умолчанию участие не подтверждено. «Да» включает в список сдающих. Ответ можно менять до начала занятия. «Нет» сохраняет допуск к работе, но исключает из вызова на это занятие.">{q("Придёте сдавать на это занятие?")}</Hint></strong>
+      <p className="queue-attendance-hint" aria-live="polite">{!me.answered ? q("По умолчанию вы не включены в состав приходящих.") : me.will_attend ? q("Приход подтверждён. Ответ можно изменить до начала занятия.") : q("Вы отметили, что не придёте. Ответ можно изменить до начала занятия.")}</p>
+      <div className="queue-actions">
+        <button aria-pressed={me.will_attend} disabled={!data.attendance_open || data.stale || saving || checking || !canIdentify(identity)} onClick={() => choose(true)}>{q("Да, я приду")}</button>
+        <button aria-pressed={!me.will_attend} disabled={!data.attendance_open || data.stale || saving || checking || !canIdentify(identity)} onClick={() => choose(false)}>{q("Нет, не приду")}</button>
+      </div>
+      {!data.attendance_open && <p>{q("Изменение посещения недоступно для этого занятия.")}</p>}
+      {!canIdentify(identity) && <p>{q("Заполните ФИО и GitHub в форме выше.")}</p>}
+    </div>}
     <ol className="queue-list">
       {displayRows.map(row => row.preview ? <li key="preview" className="queue-row queue-preview">
         <span className="queue-rank">{data?.preview?.position ?? "?"}</span><div><strong>{identity.surname} {identity.name}</strong><small>{labId}{q("· Предварительная позиция")}</small></div><small>{q("Проверка…")}</small>
@@ -73,16 +83,6 @@ export function StudentQueue({
     </ol>
     {data && !data.entries?.length && !checking && <p className="queue-muted">{q("Пока нет допущенных участников. После успешной проверки работа появится здесь.")}</p>}
     {data && !me && !checking && <p className="queue-muted">{q("Для указанного GitHub допущенная работа пока не найдена. Успешно зарегистрируйте первую незащищённую лабораторную.")}</p>}
-    {me && <div className="queue-notice">
-      <strong>{q("Придёте сдавать на это занятие?")}</strong>
-      <p className="queue-attendance-hint" aria-live="polite">{!me.answered ? q("По умолчанию вы не включены в состав приходящих.") : me.will_attend ? q("Приход подтверждён. Ответ можно изменить до начала занятия.") : q("Вы отметили, что не придёте. Ответ можно изменить до начала занятия.")}</p>
-      <div className="queue-actions">
-        <button aria-pressed={me.will_attend} disabled={!data.attendance_open || data.stale || saving || checking || !canIdentify(identity)} onClick={() => choose(true)}>{q("Да, я приду")}</button>
-        <button aria-pressed={!me.will_attend} disabled={!data.attendance_open || data.stale || saving || checking || !canIdentify(identity)} onClick={() => choose(false)}>{q("Нет, не приду")}</button><Help text="По умолчанию участие не подтверждено. «Да» включает в список сдающих. Ответ можно менять до начала занятия. «Нет» сохраняет допуск к работе, но исключает из вызова на это занятие." />
-      </div>
-      {!data.attendance_open && <p>{q("Изменение посещения недоступно для этого занятия.")}</p>}
-      {!canIdentify(identity) && <p>{q("Заполните ФИО и GitHub в форме выше.")}</p>}
-    </div>}
     {saveError && <p role="alert" className="queue-notice queue-error">{queueError(saveError)}</p>}
     <div className={`queue-feedback ${saving ? "is-saving" : ""}`} role="status" aria-live="polite"><span className="queue-spinner" aria-hidden="true" />{saving ? q("Сохраняется ответ…") : ""}</div>
     <small>{q("Ответ можно изменить до начала пары. Для возвращения к списку новая проверка не требуется.")}</small>
