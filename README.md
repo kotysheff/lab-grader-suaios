@@ -15,6 +15,7 @@
   <a href="docs/queue/RUNBOOK.md">Запустить демо</a> ·
   <a href="research/queue-study/README.md">Исследование</a> ·
   <a href="docs/adr/README.md">Архитектурные решения</a> ·
+  <a href="docs/hackathon/lab-grader-queue/README.md">ADR по шаблону задания</a> ·
   <a href="docs/queue/README.md">Устройство очереди</a>
 </p>
 
@@ -42,7 +43,7 @@
 </td>
 <td width="33%" valign="top">
 <strong>02 / Преподаватель</strong><br><br>
-Весь состав занятия, текущий и следующий студент, результаты защиты, повторные попытки в конце, статистика и история.<br><br>
+Весь состав занятия, все вызванные студенты и следующий, результаты защиты, повторные попытки в конце, статистика и история.<br><br>
 <a href="docs/queue/RUNBOOK.md#преподаватель">Панель преподавателя →</a>
 </td>
 <td width="33%" valign="top">

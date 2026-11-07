@@ -46,3 +46,6 @@
 ---
 
 [← Главная](../../README.md) · [Исследование и графики](../../research/queue-study/README.md) · [Посмотреть демо](../queue/RUNBOOK.md)
+
+
+Два обязательных ADR по шаблону задания: [хранение](../hackathon/lab-grader-queue/ADR-01-storage.md), [расписание](../hackathon/lab-grader-queue/ADR-02-schedule.md).
