@@ -180,5 +180,6 @@
   "Применена поправка расписания": "Schedule override applied",
   "Записался": "Joined",
   "через 10 минут после окончания и в полночь": "10 minutes after the session ends and at midnight",
-  "Ранняя сверка: {{early}}; ночная: {{night}}": "Early check: {{early}}; nightly check: {{night}}"
+  "Ранняя сверка: {{early}}; ночная: {{night}}": "Early check: {{early}}; nightly check: {{night}}",
+  "Локальная проверка: таблица доступна только для чтения. Укажите свои ФИО и GitHub, затем выберите посещение в списке ниже.": "Local check: the sheet is read-only. Enter your name and GitHub account, then choose attendance in the roster below."
 }

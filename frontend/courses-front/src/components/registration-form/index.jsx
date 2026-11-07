@@ -25,11 +25,16 @@ export const RegistrationForm = ({
     }
   });
   const [queueEnabled, setQueueEnabled] = useState(false);
+  const [registrationDisabled, setRegistrationDisabled] = useState(false);
   const [tab, setTab] = useState("registration");
   useEffect(() => {
     let active = true;
     fetchCourseDetails(courseId).then(value => {
-      if (active) setQueueEnabled(Boolean(value.queue_enabled));
+      if (active) {
+        setQueueEnabled(Boolean(value.queue_enabled));
+        setRegistrationDisabled(Boolean(value.queue_registration_disabled));
+        if (value.queue_registration_disabled) setTab("queue");
+      }
     }).catch(() => {});
     return () => {
       active = false;
@@ -121,16 +126,17 @@ export const RegistrationForm = ({
       <QueueLanguage />
       <CardTitle>{q("Проверка и защита лабораторной")}</CardTitle>
       {queueEnabled && <div className="queue-tabs" role="tablist" aria-label={q("Разделы лабораторной")}>
-        <button role="tab" aria-selected={tab === "registration"} onClick={() => setTab("registration")}>{q("Регистрация и проверка")}</button>
+        <button role="tab" disabled={registrationDisabled} aria-selected={tab === "registration"} onClick={() => setTab("registration")}>{q("Регистрация и проверка")}</button>
         <button role="tab" aria-selected={tab === "queue"} onClick={() => setTab("queue")}>{q("Список на занятие")}</button>
       </div>}
+      {registrationDisabled && <p role="status">{q("Локальная проверка: таблица доступна только для чтения. Укажите свои ФИО и GitHub, затем выберите посещение в списке ниже.")}</p>}
       <InputContainer>
         <Input type="text" name="surname" aria-label={q("Фамилия")} disabled={isLoading} placeholder={q("Фамилия")} value={formState.surname} onChange={handleChange} />
         <Input type="text" name="name" aria-label={q("Имя")} disabled={isLoading} placeholder={q("Имя")} value={formState.name} onChange={handleChange} />
         <Input type="text" name="patronymic" aria-label={q("Отчество")} disabled={isLoading} placeholder={q("Отчество")} value={formState.patronymic} onChange={handleChange} />
         <Input type="text" name="github" aria-label="GitHub" disabled={isLoading} placeholder={q("GitHub-аккаунт (имя пользователя)")} value={formState.github} onChange={handleChange} />
       </InputContainer>
-      {tab === "registration" && <RegistrationButton onClick={handleSubmit} disabled={isLoading}>
+      {tab === "registration" && !registrationDisabled && <RegistrationButton onClick={handleSubmit} disabled={isLoading}>
         {isLoading ? q("Проверка...") : q("Зарегистрироваться и запустить проверку")}
       </RegistrationButton>}
       {queueEnabled && tab === "queue" && <StudentQueue courseId={courseId} groupId={groupId} labId={labId} identity={formState} checking={isLoading} refreshToken={checkResult} />}
