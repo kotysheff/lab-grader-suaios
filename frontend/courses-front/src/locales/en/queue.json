@@ -178,5 +178,7 @@
   "Источник данных недоступен. Сохранённый список доступен; повторите позже.": "The data source is unavailable. The saved roster is available; try again later.",
   "Не удалось связаться с сервером. Проверьте соединение и повторите действие.": "Could not reach the server. Check your connection and try again.",
   "Применена поправка расписания": "Schedule override applied",
-  "Записался": "Joined"
+  "Записался": "Joined",
+  "через 10 минут после окончания и в полночь": "10 minutes after the session ends and at midnight",
+  "Ранняя сверка: {{early}}; ночная: {{night}}": "Early check: {{early}}; nightly check: {{night}}"
 }

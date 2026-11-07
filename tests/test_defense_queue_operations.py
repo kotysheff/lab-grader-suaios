@@ -55,6 +55,7 @@ class OperationsTests(unittest.TestCase):
         first = ops.call_next(self.store, 's', now=111, actor='admin')
         with self.store.transaction() as con:
             con.execute('DROP TABLE queue_commands')
+            con.execute('ALTER TABLE queue_reconciliations DROP COLUMN checked_at')
             con.execute("CREATE UNIQUE INDEX one_called_per_teacher ON queue_entries(teacher_key) WHERE status='called'")
             con.execute('PRAGMA user_version=4')
         self.store = Store(self.store.path)
@@ -62,7 +63,7 @@ class OperationsTests(unittest.TestCase):
         self.assertEqual(ops.call_next(self.store, 's', now=113, actor='admin', request_id='second'), second)
         self.assertEqual(self.view()['current_entry_ids'], [first, second])
         with self.store.connection() as con:
-            self.assertEqual(con.execute('PRAGMA user_version').fetchone()[0], 5)
+            self.assertEqual(con.execute('PRAGMA user_version').fetchone()[0], 6)
 
     def test_parallel_distinct_calls_never_call_same_student_twice(self):
         from concurrent.futures import ThreadPoolExecutor

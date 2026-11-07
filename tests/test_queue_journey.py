@@ -50,6 +50,10 @@ def test_entire_defense_journey(queue_client,monkeypatch,tmp_path,run):
     upcoming=client.get(public).json()
     assert upcoming['entries'][0]['lab_key']=='2'
     assert not upcoming['entries'][0]['will_attend']
+    with store.connection() as con:
+        assert con.execute('SELECT checked_at FROM queue_reconciliations WHERE session_id=?',('future',)).fetchone()[0] is not None
+        midnight = con.execute('SELECT due_at FROM queue_reconciliations WHERE session_id=?',('future',)).fetchone()[0]
+    assert reconcile(store,'future',now=midnight,sync=lambda:main._sync_defense_queue('c','g',course,force=True))
     # Реальная SQLite backup/restore, без копирования одного файла при активном WAL.
     path=tmp_path/'restored.db'
     with store.connection() as con, sqlite3.connect(path) as target: con.backup(target)

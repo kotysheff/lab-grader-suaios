@@ -7,6 +7,7 @@ import time
 from .operations import effective_course, teacher_view, promote_next_labs
 from .schedule import refresh_schedule
 from .runtime import saved_deadlines_available
+from .timing import service_ends_at
 
 logger = logging.getLogger(__name__)
 
@@ -17,8 +18,10 @@ def reconcile(store, session_id, *, now, sync):
         task = con.execute('SELECT * FROM queue_reconciliations WHERE session_id=?', (session_id,)).fetchone()
         if not task or task['done_at'] or task['due_at'] > now or task['claimed_at'] is not None and task['claimed_at'] > now-300:
             return False
-        session = con.execute('SELECT schedule_revision FROM sessions WHERE session_id=?',(session_id,)).fetchone()
-        revision = session[0]
+        session = con.execute('SELECT * FROM sessions WHERE session_id=?',(session_id,)).fetchone()
+        revision = session['schedule_revision']
+        final_at = service_ends_at(session)
+        final = now >= final_at
         attempt = task['attempts'] + 1
         con.execute('UPDATE queue_reconciliations SET claimed_at=?,attempts=attempts+1 WHERE session_id=?', (now,session_id))
     try:
@@ -29,11 +32,16 @@ def reconcile(store, session_id, *, now, sync):
                 return False
             rows = con.execute("SELECT e.*,c.status AS candidate_status FROM queue_entries e JOIN queue_candidates c USING(candidate_id) WHERE e.session_id=? AND e.status IN ('waiting','called')", (session_id,)).fetchall()
             for row in rows:
+                if not final and row['candidate_status'] != 'defended':
+                    continue
                 status = 'defended' if row['candidate_status'] == 'defended' else 'expired'
                 con.execute('UPDATE queue_entries SET status=?,closed_at=?,version=version+1 WHERE entry_id=?', (status,now,row['entry_id']))
                 con.execute("INSERT INTO queue_events(session_id,entry_id,candidate_id,actor_kind,actor_key,kind,occurred_at) VALUES (?,?,?,'system','reconciliation',?,?)", (session_id,row['entry_id'],row['candidate_id'],'sheet_defended' if status=='defended' else 'session_finished',now))
-            con.execute("UPDATE sessions SET enrollment_status='closed' WHERE session_id=? AND enrollment_status!='cancelled'", (session_id,))
-            con.execute('UPDATE queue_reconciliations SET done_at=?,claimed_at=NULL,error=NULL WHERE session_id=?', (now,session_id))
+            if final:
+                con.execute("UPDATE sessions SET enrollment_status='closed' WHERE session_id=? AND enrollment_status!='cancelled'", (session_id,))
+                con.execute('UPDATE queue_reconciliations SET done_at=?,claimed_at=NULL,error=NULL WHERE session_id=?', (now,session_id))
+            else:
+                con.execute('UPDATE queue_reconciliations SET checked_at=?,due_at=?,claimed_at=NULL,error=NULL WHERE session_id=?', (now,final_at,session_id))
         return True
     except Exception as error:
         with store.transaction() as con:

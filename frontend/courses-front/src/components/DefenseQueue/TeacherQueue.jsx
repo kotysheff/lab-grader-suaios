@@ -130,7 +130,7 @@ export function TeacherQueue({
             action: data.session.enrollment_status === "closed" ? "open_enrollment" : "close_enrollment"
           })}>{data.session.enrollment_status === "closed" ? q("Открыть запись") : q("Закрыть запись досрочно")}</button>}
         <dl className="queue-summary">{[["called", q("Сдают сейчас")], ["waiting", q("Ждут")], ["defended", q("Сдано")], ["failed", q("Неудачных попыток")], ["no_show", q("Неявок")]].map(([key, label]) => <div key={key}><dt>{label}</dt><dd>{data.stats[key]}</dd></div>)}</dl>
-        <div className="queue-call-toolbar"><button className="primary queue-call-button" disabled={busy || Date.now() / 1000 < data.session.starts_at || !data.next_entry_id} onClick={() => action({
+        <div className="queue-call-toolbar"><button className="primary queue-call-button" disabled={busy || data.service_open === false || Date.now() / 1000 < data.session.starts_at || !data.next_entry_id} onClick={() => action({
               action: "call_next"
             })}>{q("Вызвать следующего")}</button><span className="queue-muted">{data.current_entry_ids?.length ? q("Можно вызвать ещё одного студента; результат отмечается отдельно для каждого") : data.next_entry_id ? q("Следующий студент выделен в списке") : q("Нет ожидающих студентов")}</span></div>
         <div className="queue-table-wrap" role="region" aria-label={q("Список сдающих")} tabIndex={0}><table role="table" className="queue-table queue-roster-table"><colgroup><col className="queue-col-position" /><col className="queue-col-student" /><col className="queue-col-lab" /><col className="queue-col-date" /><col className="queue-col-status" /><col className="queue-col-actions" /></colgroup><caption className="queue-sr-only">{q("Все участники и результаты выбранного занятия")}</caption><thead><tr><th scope="col" aria-label={q("Позиция")}>№</th><th>{q("Студент / GitHub")}</th><th>{q("Работа")}</th><th>{q("Записался")}</th><th>{q("Статус")}</th><th>{q("Действия")}</th></tr></thead><tbody role="rowgroup" ref={rowContainer}>
@@ -143,7 +143,7 @@ export function TeacherQueue({
                           current: data.current_entry_ids || [data.current_entry_id],
                           next: data.next_entry_id
                         }))}</span></td>
-              <td role="cell" data-label={q("Действия")}><div className="queue-row-actions">{!current && <span className="queue-action-hint">{q("Результат после вызова")}</span>}{[["defended", q("Сдал")], ["failed", q("Не сдал")], ["no_show", q("Не пришёл")]].map(([outcome, label]) => <button key={outcome} className={`queue-result ${outcome}`} data-visible={current} aria-hidden={!current} tabIndex={current ? 0 : -1} disabled={busy || !current} onClick={() => action({
+              <td role="cell" data-label={q("Действия")}><div className="queue-row-actions">{!current && <span className="queue-action-hint">{q("Результат после вызова")}</span>}{[["defended", q("Сдал")], ["failed", q("Не сдал")], ["no_show", q("Не пришёл")]].map(([outcome, label]) => <button key={outcome} className={`queue-result ${outcome}`} data-visible={current} aria-hidden={!current} tabIndex={current ? 0 : -1} disabled={busy || !current || data.service_open === false} onClick={() => action({
                           action: "result",
                           entry_id: row.attempt.entry_id,
                           outcome
@@ -178,7 +178,7 @@ export function TeacherQueue({
                 }) : ""}{e.entry_id ? q(" · попытка {{v0}}", {
                   v0: e.entry_id
                 }) : ""}</li>)}</ul>
-          <p>{q("Сверка с таблицей:")} {data.reconciliation?.done_at ? displayDate(data.reconciliation.done_at, data.session.timezone) : data.reconciliation?.error ? q("ожидается повтор после ошибки чтения") : q("через 10 минут после окончания")}.</p>
+          <p>{q("Сверка с таблицей:")} {data.reconciliation?.done_at ? displayDate(data.reconciliation.done_at, data.session.timezone) : data.reconciliation?.error ? q("ожидается повтор после ошибки чтения") : data.reconciliation?.checked_at ? q("Ранняя сверка: {{early}}; ночная: {{night}}", { early: displayDate(data.reconciliation.checked_at, data.session.timezone), night: displayDate(data.reconciliation.due_at, data.session.timezone) }) : q("через 10 минут после окончания и в полночь")}.</p>
         </details>
       </>}
     </>}

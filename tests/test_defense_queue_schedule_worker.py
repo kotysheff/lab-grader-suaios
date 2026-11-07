@@ -88,8 +88,14 @@ class ScheduleTests(unittest.TestCase):
         self.assertFalse(worker.reconcile(reopened,'s',now=900,sync=success))
         self.assertEqual(calls,[1])
         with reopened.connection() as con:
-            self.assertEqual([r[0] for r in con.execute('SELECT status FROM queue_entries ORDER BY entry_id')],['defended','expired'])
+            self.assertEqual([r[0] for r in con.execute('SELECT status FROM queue_entries ORDER BY entry_id')],['defended','waiting'])
             self.assertEqual(con.execute('SELECT attempts FROM queue_reconciliations').fetchone()[0],2)
+            self.assertIsNone(con.execute('SELECT done_at FROM queue_reconciliations').fetchone()[0])
+            self.assertEqual(con.execute('SELECT checked_at FROM queue_reconciliations').fetchone()[0],860)
+        self.assertTrue(worker.reconcile(reopened,'s',now=86400,sync=success))
+        with reopened.connection() as con:
+            self.assertEqual([r[0] for r in con.execute('SELECT status FROM queue_entries ORDER BY entry_id')],['defended','expired'])
+            self.assertEqual(con.execute('SELECT done_at FROM queue_reconciliations').fetchone()[0],86400)
 
     def test_worker_freezes_and_reconciles_without_open_browser(self):
         self.store.configure_group('c','g',title='Предмет')
@@ -111,8 +117,12 @@ class ScheduleTests(unittest.TestCase):
         worker.QueueWorker(Store(self.store.path),lambda:[('c',course)],sync,lambda url:None).tick(now=800)
         with self.store.connection() as con:
             self.assertEqual(con.execute('SELECT status FROM queue_entries').fetchone()[0],'defended')
-            self.assertEqual(con.execute('SELECT done_at FROM queue_reconciliations').fetchone()[0],800)
+            self.assertIsNone(con.execute('SELECT done_at FROM queue_reconciliations').fetchone()[0])
+            self.assertEqual(con.execute('SELECT checked_at FROM queue_reconciliations').fetchone()[0],800)
         self.assertTrue(any(c.get('force') for c in calls))
+        worker.QueueWorker(Store(self.store.path),lambda:[('c',course)],sync,lambda url:None).tick(now=86400)
+        with self.store.connection() as con:
+            self.assertEqual(con.execute('SELECT done_at FROM queue_reconciliations').fetchone()[0],86400)
 
 
 class ScheduleExtensionTests(unittest.TestCase):

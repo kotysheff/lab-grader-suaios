@@ -7,6 +7,7 @@ from .policy import priority_for
 from .runtime import queue_view
 from .storage import QueueClosed, QueueConflict
 from .sync import course_timezone
+from .timing import service_ends_at
 
 
 def _event(con, session_id, kind, now, *, actor, entry_id=None, candidate_id=None, details=None):
@@ -55,7 +56,10 @@ def materialize(store, view, course, *, now):
     with store.transaction() as con:
         if con.execute('SELECT 1 FROM queue_reconciliations WHERE session_id=? AND done_at IS NOT NULL', (session['session_id'],)).fetchone():
             return
-        for row in view['entries']:
+        checked = con.execute('SELECT checked_at FROM queue_reconciliations WHERE session_id=?', (session['session_id'],)).fetchone()
+        locked = now >= service_ends_at(session) or (checked is not None and checked['checked_at'] is not None)
+        initial_rows = [] if locked else view['entries']
+        for row in initial_rows:
             if not row['will_attend']:
                 continue
             candidate = con.execute('SELECT * FROM queue_candidates WHERE candidate_id=?', (row['candidate_id'],)).fetchone()
@@ -76,7 +80,7 @@ def materialize(store, view, course, *, now):
             _insert_attempt(con, candidate, session, request_key=initial_key, repeat=False, rank=rank, now=now, snapshot=row)
         con.execute('''INSERT INTO queue_reconciliations(session_id,due_at) VALUES (?,?)
             ON CONFLICT(session_id) DO NOTHING''',
-            (session['session_id'], session['ends_at'] + 600))
+            (session['session_id'], min(session['ends_at'] + 600, service_ends_at(session))))
 
 
 def teacher_view(store, course_id, group_id, course, *, deadlines_available, now, session_id):
@@ -110,6 +114,8 @@ def teacher_view(store, course_id, group_id, course, *, deadlines_available, now
     active_order = {row['candidate_id']: index for index, row in enumerate(active)}
     entries.sort(key=lambda row: (0, active_order[row['candidate_id']]) if row['candidate_id'] in active_order else (1, row['qualified_at']))
     return dict(view, entries=entries, attempts=attempts, history=events, available_candidates=available_candidates,
+                service_ends_at=service_ends_at(view['session']),
+                service_open=view['session']['starts_at'] <= now < service_ends_at(view['session']) and view['session']['enrollment_status'] != 'cancelled',
                 current_entry_id=called[0]['entry_id'] if called else None,
                 current_entry_ids=[row['entry_id'] for row in called],
                 next_entry_id=waiting[0]['entry_id'] if waiting else None,
@@ -121,8 +127,8 @@ def teacher_view(store, course_id, group_id, course, *, deadlines_available, now
 def call_next(store, session_id, *, now, actor, request_id=None):
     with store.transaction() as con:
         session = con.execute('SELECT * FROM sessions WHERE session_id=?', (session_id,)).fetchone()
-        if not session or now < session['starts_at'] or session['enrollment_status'] == 'cancelled':
-            raise QueueClosed('Занятие ещё не началось или отменено')
+        if not session or now < session['starts_at'] or now >= service_ends_at(session) or session['enrollment_status'] == 'cancelled':
+            raise QueueClosed('Приём ещё не начался, завершён или занятие отменено')
         if request_id is not None:
             if not isinstance(request_id, str) or not 1 <= len(request_id) <= 128:
                 raise ValueError('Некорректный идентификатор команды')
@@ -152,6 +158,9 @@ def record_result(store, entry_id, outcome, *, now, actor):
             return
         if row['status'] != 'called':
             raise QueueConflict('Можно отметить только текущего вызванного студента')
+        session = con.execute('SELECT * FROM sessions WHERE session_id=?', (row['session_id'],)).fetchone()
+        if now >= service_ends_at(session):
+            raise QueueClosed('День приёма завершён')
         con.execute('UPDATE queue_entries SET status=?,closed_at=?,version=version+1 WHERE entry_id=?', (outcome, now, entry_id))
         _event(con, row['session_id'], outcome, now, actor=actor, entry_id=entry_id, candidate_id=row['candidate_id'])
         if outcome == 'defended':
@@ -209,7 +218,7 @@ def move_session(store, session_id, *, starts_at, ends_at, local_date, now, acto
         # Старый снимок остаётся в истории; новое занятие использует новую ревизию.
         _event(con, session_id, 'schedule_changed', now, actor=actor,
                details={'old_start': session['starts_at'], 'starts_at': starts_at, 'ends_at': ends_at})
-        con.execute('UPDATE queue_reconciliations SET due_at=?,done_at=NULL,claimed_at=NULL WHERE session_id=?', (ends_at + 600, session_id))
+        con.execute('UPDATE queue_reconciliations SET due_at=?,done_at=NULL,checked_at=NULL,claimed_at=NULL WHERE session_id=?', (min(ends_at + 600, service_ends_at(dict(session, ends_at=ends_at))), session_id))
 
 
 def cancel_session(store, session_id, *, now, actor):
