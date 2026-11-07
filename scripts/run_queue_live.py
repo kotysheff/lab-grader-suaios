@@ -14,7 +14,6 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 COURSE_ID, GROUP_ID = 'queue-live-os', '4434'
 SPREADSHEET = '1mwFswSqBZHQjvfU7JtiT_f5yQMCCgjyGYrhjxLgBSus'
-GID = '1544378737'
 
 
 def local_directory(value):
@@ -33,12 +32,10 @@ def base_course():
     course['queue'] = {
         'enabled': True, 'timezone': 'Europe/Moscow', 'registration_disabled': True,
         'semester_week_anchor': '2026-08-31',
-        'sheet_source': {'type': 'public_csv', 'worksheets': {GROUP_ID: GID}},
-        'schedule': {GROUP_ID: {
-            'source': 'suai', 'university': 'ГУАП', 'group_id': '7116',
-            'subject': 'Операционные системы', 'kind': 'Лабораторное занятие',
-            'teacher_id': '39614', 'teacher_key': 'polyak', 'week_anchor': '2026-08-31',
-        }},
+        'sheet_source': {'type': 'public_xlsx'},
+        'no_deadline_markers': ['-'],
+        'required_labs': [key for key in course['labs'] if key not in ('0', '01')],
+        'schedule': {},
     }
     course['google']['spreadsheet'] = SPREADSHEET
     return course
@@ -51,35 +48,60 @@ def select_sheet_labs(course, grid):
     course['labs'] = {key: lab for key, lab in course['labs'].items() if lab.get('short-name') in header}
     if not course['labs']:
         raise ValueError('Не найдены столбцы работ из конфигурации. Нужна проверка структуры листа')
-    course['queue']['required_labs'] = list(course['labs'])
+    course['queue']['required_labs'] = [key for key in course['queue'].get('required_labs', course['labs']) if key in course['labs']]
     return course
 
 
-def allowed_path(path, method):
+def allowed_path(path, method, groups=(GROUP_ID,)):
     public = f'/courses/{COURSE_ID}'
-    student_queue = f'{public}/groups/{GROUP_ID}/queue'
-    admin_queue = f'/admin/courses/{COURSE_ID}/groups/{GROUP_ID}/queue'
+    queue_paths = [prefix for group in groups for prefix in (f'{public}/groups/{group}/queue', f'/admin/courses/{COURSE_ID}/groups/{group}/queue')]
     settings = f'/admin/courses/{COURSE_ID}/queue/settings'
-    queue_path = path == student_queue or path.startswith(student_queue + '/') or path == admin_queue or path.startswith(admin_queue + '/') or path == settings
+    queue_path = any(path == prefix or path.startswith(prefix + '/') for prefix in queue_paths) or path == settings
     if method == 'OPTIONS':
         return True
     if method in ('GET', 'HEAD'):
-        return queue_path or path in ('/courses', public, public+'/groups', public+f'/groups/{GROUP_ID}/labs',
+        return queue_path or path in [public+f'/groups/{group}/labs' for group in groups] or path in ('/courses', public, public+'/groups',
                                       '/admin/check-auth', '/admin/queue/sessions', '/docs', '/openapi.json', '/redoc')
     return path == '/admin/login' or queue_path
 
 
 def inspect_sources(course, *, fetch, now):
-    from grading.defense_queue.public_sheet import read_public_grid
-    from grading.defense_queue.schedule_sources.suai import load
+    from grading.defense_queue.public_sheet import read_public_workbook, list_public_groups
+    from grading.defense_queue.schedule_sources.suai import load, group_directory
     from grading.defense_queue.schedule import normalize_lessons
-    grid = read_public_grid(course, GROUP_ID)
-    course = select_sheet_labs(course, grid)
-    source = course['queue']['schedule'][GROUP_ID]
-    lessons = normalize_lessons(load(source, fetch=fetch, now=now, timezone=course['queue']['timezone']))
-    if not lessons:
-        raise ValueError('В расписании не найдены ближайшие лабораторные этого предмета и преподавателя. Проверьте фильтры источника')
-    return course, grid, lessons
+    from grading.defense_queue.course_requirements import scored_labs
+    workbook = read_public_workbook(course)
+    groups = list_public_groups(course)
+    groups = ([GROUP_ID] if GROUP_ID in groups else []) + [group for group in groups if group != GROUP_ID]
+    directory = {name.casefold(): value for name, value in group_directory(fetch('https://guap.ru/rasp/')).items()}
+    graph = workbook.get(course.get('google', {}).get('info-sheet', 'График'), [])
+    labels = {label for group in groups for label in workbook[group][1]}
+    course['labs'] = {key: lab for key, lab in course['labs'].items() if lab.get('short-name') in labels}
+    if not course['labs']:
+        raise ValueError('Не найдены столбцы лабораторных работ')
+    course['queue']['sheet_source']['groups'] = groups
+    course['queue']['schedule'] = {}
+    required, lessons, status = {}, {}, {}
+    for group in groups:
+        scores = scored_labs(graph, group)
+        required[group] = [key for key, lab in course['labs'].items()
+                           if key != '0' and lab.get('short-name') in workbook[group][1]
+                           and scores.get(lab.get('short-name'), True)]
+        if not required[group]:
+            raise ValueError(f'Для группы {group} не найдены работы, требующие защиты')
+        group_id = directory.get(group.casefold())
+        if group_id is None:
+            course['queue']['schedule'][group] = {'source': 'manual', 'university': '', 'match_status': 'group_not_found'}
+            lessons[group], status[group] = [], 'group_not_found'
+            continue
+        source = {'source': 'suai', 'university': 'ГУАП', 'group_id': group_id,
+                  'subject': 'Операционные системы', 'kind': 'Лабораторное занятие',
+                  'teacher_id': '39614', 'teacher_key': 'polyak', 'week_anchor': '2026-08-31'}
+        course['queue']['schedule'][group] = source
+        lessons[group] = normalize_lessons(load(source, fetch=fetch, now=now, timezone=course['queue']['timezone']))
+        status[group] = 'ok' if lessons[group] else 'no_matching_labs'
+    course['queue']['required_labs_by_group'] = required
+    return course, {group: workbook[group] for group in groups}, lessons, status
 
 
 def prepare(args):
@@ -96,18 +118,28 @@ def prepare(args):
     now = int(time.time())
     directory = local_directory(args.data_dir)
     try:
-        course, grid, lessons = inspect_sources(base_course(), fetch=fetch, now=now)
+        course, grids, lessons, schedule_status = inspect_sources(base_course(), fetch=fetch, now=now)
         from grading.defense_queue.storage import QueueStore
         from grading.defense_queue.sync import sync_group, parse_queue_deadline
         from grading.sheets_client import parse_deadline
         # Диагностика не меняет предыдущую локальную историю и не сохраняет выгрузку студентов.
+        groups = {}
         with tempfile.TemporaryDirectory(dir=directory) as temp:
-            summary = sync_group(QueueStore(Path(temp)/'check.sqlite3'), COURSE_ID, GROUP_ID, course, grid,
-                                 parse_deadline=lambda value: parse_queue_deadline(value, course, parse_deadline), now=now)
-        report = {'checked_at': datetime.fromtimestamp(now, timezone.utc).isoformat(), 'status': 'ok',
-                  'group': GROUP_ID, 'students': summary['students'], 'eligible': summary['eligible'],
-                  'labs': list(course['labs']), 'deadlines_available': summary['deadlines_available'],
-                  'sessions': len(lessons), 'next_session': datetime.fromtimestamp(min(row['starts_at'] for row in lessons), timezone.utc).isoformat()}
+            store = QueueStore(Path(temp)/'check.sqlite3')
+            for group, grid in grids.items():
+                summary = sync_group(store, COURSE_ID, group, course, grid,
+                                     parse_deadline=lambda value: parse_queue_deadline(value, course, parse_deadline), now=now)
+                groups[group] = {'students': summary['students'], 'eligible': summary['eligible'],
+                                 'defense_labs': course['queue']['required_labs_by_group'][group],
+                                 'deadlines_available': summary['deadlines_available'],
+                                 'sheet_deadlines': summary['sheet_deadlines'],
+                                 'sessions': len(lessons[group]), 'schedule_status': schedule_status[group],
+                                 'next_session': datetime.fromtimestamp(min(row['starts_at'] for row in lessons[group]), timezone.utc).isoformat() if lessons[group] else None}
+        report = {'checked_at': datetime.fromtimestamp(now, timezone.utc).isoformat(), 'status': 'ok', 'groups': groups,
+                  'students': sum(group['students'] for group in groups.values()),
+                  'eligible': sum(group['eligible'] for group in groups.values()),
+                  'sessions': sum(len(rows) for rows in lessons.values())}
+
     except Exception as error:
         # В отчёте нет ФИО, логинов, содержимого таблицы или секретов.
         report = {'checked_at': datetime.fromtimestamp(now, timezone.utc).isoformat(), 'status': 'error',
@@ -133,12 +165,16 @@ def create_app(directory, course, lessons):
     from grading.defense_queue.runtime import queue_store
     from grading.defense_queue.schedule import import_sessions
     main.COURSES_DIR, main.INDEX_FILE = str(configs), str(configs/'index.yaml')
-    import_sessions(queue_store(), COURSE_ID, GROUP_ID, course, lessons, now=int(time.time()))
+    if isinstance(lessons, list):
+        lessons = {GROUP_ID: lessons}
+    groups = list(course['queue']['sheet_source'].get('groups', lessons))
+    for group, rows in lessons.items():
+        import_sessions(queue_store(), COURSE_ID, group, course, rows, now=int(time.time()))
     os.environ['QUEUE_WORKER_ENABLED'] = '1'
 
     @main.app.middleware('http')
     async def public_data_boundary(request, call_next):
-        if not allowed_path(request.url.path, request.method):
+        if not allowed_path(request.url.path, request.method, groups):
             return JSONResponse(status_code=409, content={'detail': 'Локальная проверка: внешние источники доступны только для чтения. Регистрация, GitHub и запись оценок отключены.'})
         return await call_next(request)
 
@@ -146,8 +182,9 @@ def create_app(directory, course, lessons):
     print('Вход: http://localhost:5173/admin', flush=True)
     print(f'Логин: local; пароль: {password}', flush=True)
     print(f'Панель: http://localhost:5173/admin/courses/{COURSE_ID}/queue', flush=True)
-    first = next(iter(course['labs']))
-    print(f'Студент: http://localhost:5173/course/{COURSE_ID}/group/{GROUP_ID}/lab/{first}', flush=True)
+    group = GROUP_ID if GROUP_ID in groups else groups[0]
+    first = course['queue'].get('required_labs_by_group', {}).get(group, course['queue']['required_labs'])[0]
+    print(f'Студент: http://localhost:5173/course/{COURSE_ID}/group/{group}/lab/{first}', flush=True)
     print(f'Данные и отчёт: {directory}\n', flush=True)
     return main.app
 
@@ -165,7 +202,7 @@ def main():
             uvicorn.run(create_app(directory, course, lessons), host='127.0.0.1', port=args.port)
     except Exception as error:
         print(f'Проверка не завершена: {type(error).__name__}: {error}', file=sys.stderr)
-        print('Проверь интернет и доступ к публичному CSV/сайту ГУАП. Отчёт: data/queue-live/last-check.json (при другом --data-dir смотри указанный каталог).', file=sys.stderr)
+        print('Проверь интернет и доступ к экспорту Google-таблицы и сайту ГУАП. Отчёт: data/queue-live/last-check.json (при другом --data-dir смотри указанный каталог).', file=sys.stderr)
         return 1
     return 0
 

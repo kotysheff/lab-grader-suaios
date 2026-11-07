@@ -40,8 +40,8 @@ def test_local_course_selects_actual_sheet_columns_without_modifying_original():
     assert len(original['labs'])>1
     assert selected['queue']['required_labs']==['1']
     assert selected['queue']['registration_disabled']
-    source=selected['queue']['schedule']['4434']
-    assert source['group_id']=='7116' and source['kind']=='Лабораторное занятие'
+    assert selected['queue']['sheet_source']['type']=='public_xlsx'
+    assert 'worksheets' not in selected['queue']['sheet_source']
 
 
 def test_isolated_live_profile_http_without_external_writes():
@@ -67,7 +67,7 @@ with tempfile.TemporaryDirectory(dir=root/'data') as temp:
     import main
     import grading.defense_queue.public_sheet as public
     def never(*args,**kwargs): raise AssertionError('Unexpected credentials or external request')
-    with patch.object(public,'read_public_grid',lambda *args:grid), patch.object(main,'sheets_client',never), patch('requests.get',never):
+    with patch.object(public,'read_public_grid',lambda *args:grid), patch.object(public,'read_public_workbook',lambda *args:{'4434':grid}), patch.object(main,'sheets_client',never), patch('requests.get',never):
         client=TestClient(app)
         base='/courses/'+live.COURSE_ID
         assert main.validate_course_index()

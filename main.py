@@ -823,13 +823,13 @@ def edit_course_put(request: Request, course_id: str, data: EditCourseRequest, a
 @limiter.limit("10/minute")
 def get_course_groups(request: Request, course_id: str):
     course_info = get_course_by_id(course_id)
-    from grading.defense_queue.public_sheet import public_sheet_config
+    from grading.defense_queue.public_sheet import public_sheet_config, list_public_groups
     try:
         source = public_sheet_config(course_info)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     if source is not None:
-        return list(source['worksheets'])
+        return list_public_groups(course_info)
     spreadsheet_id = course_info.get("google", {}).get("spreadsheet")
     info_sheet = course_info.get("google", {}).get("info-sheet")
 
@@ -1219,6 +1219,9 @@ def _sync_defense_queue(course_id, group_id, course, *, sheet=None, force=False)
     if 'required_labs' in queue_config:
         queue_config['required_labs'] = [key for key in queue_config['required_labs']
                                         if str(key) in public_course['labs']]
+    if 'required_labs_by_group' in queue_config:
+        queue_config['required_labs_by_group'] = {group: [key for key in keys if str(key) in public_course['labs']]
+                                                  for group, keys in queue_config['required_labs_by_group'].items()}
     public_course['queue'] = queue_config
 
     def fetch_grid():
@@ -1475,7 +1478,10 @@ def get_queue_settings(request: Request, course_id: str, group_id: str | None = 
         _, course, summary = _queue_admin_context(course_id, group_id)
         from grading.defense_queue.policy import resolve_mode
         mode = resolve_mode(deadlines_available=summary['deadlines_available'], random_override=course.get('queue', {}).get('random', False)) if summary else None
-        return {'mode_locked': mode.locked if mode else None, 'mode': mode.name if mode else None, 'queue': course.get('queue', {}), 'labs': [{'key': str(key), 'title': value.get('short-name', str(key))}
+        return {'mode_locked': mode.locked if mode else None, 'mode': mode.name if mode else None,
+                'sheet_deadlines': summary.get('sheet_deadlines', {}) if summary else {},
+                'timezone': summary.get('timezone') if summary else course.get('queue', {}).get('timezone', course.get('timezone', 'Europe/Moscow')),
+                'queue': course.get('queue', {}), 'labs': [{'key': str(key), 'title': value.get('short-name', str(key))}
                                                         for key, value in course.get('labs', {}).items()]}
     except Exception as error:
         _queue_error(error)

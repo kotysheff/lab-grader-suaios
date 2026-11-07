@@ -255,3 +255,16 @@ def test_read_only_course_rejects_registration_and_grading(queue_client, monkeyp
     identity={'surname':'Фамилия','name':'Имя','patronymic':'Отчество','github':'login'}
     assert client.post('/courses/c/groups/g/register',json=identity).status_code==409
     assert client.post('/courses/c/groups/g/labs/1/grade',json={'github':'login'}).status_code==409
+
+
+def test_settings_include_sheet_dates_even_with_manual_override(queue_client):
+    client,_,_,_=queue_client
+    authenticate(client)
+    assert client.put('/admin/courses/c/queue/settings',json={'random':False,'deadlines':{'1':None}}).status_code==200
+    response=client.get('/admin/courses/c/queue/settings?group_id=g')
+    assert response.status_code==200,response.text
+    data=response.json()
+    assert data['sheet_deadlines']['1']['value'] is not None
+    assert data['sheet_deadlines']['1']['raw']=='2026-11-01'
+    assert data['sheet_deadlines']['1']['source']=='sheet'
+    assert data['timezone']=='UTC'
