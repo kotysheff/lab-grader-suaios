@@ -16,7 +16,7 @@ test("current, next and repeat states are distinct", () => {
   const row = { attempt: { entry_id: 2, status: "waiting", is_repeat: 1 } };
   assert.equal(entryLabel(row, { current: 2 }), "Сдаёт сейчас");
   assert.equal(entryLabel(row, { next: 2 }), "Следующий · повторно");
-  assert.equal(entryLabel({ state: "unconfirmed" }), "Не подтверждено");
+  assert.equal(entryLabel({ state: "unconfirmed" }), "Не придёт");
   assert.equal(entryLabel({ state: "declined" }), "Не придёт");
 });
 test("storage keys cannot collide through separators", () => {
@@ -42,4 +42,10 @@ test("move editor prefill preserves browser local time", async () => {
   const stamp = 1794238800;
   assert.ok(Math.abs(new Date(localDateTime(stamp)).getTime()/1000-stamp)<60);
   assert.equal(localDateTime(NaN), "");
+});
+
+
+test("finished repeats do not have ambiguous repeat suffixes", () => {
+  assert.equal(entryLabel({attempt:{status:"withdrawn",is_repeat:true}}),"Снят с очереди");
+  assert.equal(entryLabel({attempt:{status:"waiting",is_repeat:true}}),"Ожидает повторного вызова");
 });

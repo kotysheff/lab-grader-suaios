@@ -1,3 +1,4 @@
+import { Help } from "./Help";
 import { queueError, q, useQueueLanguage } from "./locale";
 import { useState } from "react";
 import { queueGroupPath, queueRequest } from "../../api";
@@ -77,7 +78,7 @@ export function StudentQueue({
       <p className="queue-attendance-hint" aria-live="polite">{!me.answered ? q("По умолчанию вы не включены в состав приходящих.") : me.will_attend ? q("Приход подтверждён. Ответ можно изменить до начала занятия.") : q("Вы отметили, что не придёте. Ответ можно изменить до начала занятия.")}</p>
       <div className="queue-actions">
         <button aria-pressed={me.will_attend} disabled={!data.attendance_open || data.stale || saving || checking || !canIdentify(identity)} onClick={() => choose(true)}>{q("Да, я приду")}</button>
-        <button aria-pressed={!me.will_attend} disabled={!data.attendance_open || data.stale || saving || checking || !canIdentify(identity)} onClick={() => choose(false)}>{q("Нет, не приду")}</button>
+        <button aria-pressed={!me.will_attend} disabled={!data.attendance_open || data.stale || saving || checking || !canIdentify(identity)} onClick={() => choose(false)}>{q("Нет, не приду")}</button><Help text="По умолчанию участие не подтверждено. «Да» включает в список сдающих. Ответ можно менять до начала занятия. «Нет» сохраняет допуск к работе, но исключает из вызова на это занятие." />
       </div>
       {!data.attendance_open && <p>{q("Изменение посещения недоступно для этого занятия.")}</p>}
       {!canIdentify(identity) && <p>{q("Заполните ФИО и GitHub в форме выше.")}</p>}

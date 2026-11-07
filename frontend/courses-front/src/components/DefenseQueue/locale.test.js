@@ -25,3 +25,15 @@ test("all literal queue UI copy has a translation", () => {
     }
   }
 });
+
+
+test("all help tooltips are translated", () => {
+  const ru = read("ru");
+  for (const file of ["TeacherQueue.jsx", "StudentQueue.jsx"]) {
+    const source = fs.readFileSync(new URL(file, import.meta.url), "utf8");
+    for (const match of source.matchAll(/<Help text=("(?:[^"\\]|\\.)*")/g)) {
+      const key = JSON.parse(match[1]);
+      assert.ok(key in ru, key);
+    }
+  }
+});
