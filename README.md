@@ -1,8 +1,5 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-reduced-motion: reduce)" srcset="docs/assets/readme/hero.svg">
-    <img src="docs/assets/readme/hero.gif" width="1200" alt="Lab Grader Defense Queue — очередь защиты лабораторных работ">
-  </picture>
+  <img src="docs/assets/readme/hero.svg" width="1200" alt="Lab Grader Defense Queue — очередь защиты лабораторных работ">
 </p>
 
 <div align="center">
@@ -19,11 +16,52 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-334155?style=flat-square" alt="MIT"></a>
 </p>
 
-[Посмотреть за 5 минут](docs/queue/SANDBOX.md) · [Рабочий запуск](docs/queue/RUNBOOK.md) · [Исследование](research/queue-study/README.md) · [ADR](docs/adr/README.md) · [Вся документация](docs/README.md)
+[Демонстрация](#демонстрация) · [Посмотреть за 5 минут](docs/queue/SANDBOX.md) · [Рабочий запуск](docs/queue/RUNBOOK.md) · [Исследование](research/queue-study/README.md) · [ADR](docs/adr/README.md) · [Вся документация](docs/README.md)
 
 <img src="docs/assets/readme/stack.svg" width="680" alt="FastAPI · React и Vite · SQLite · приоритет от −1">
 
 </div>
+
+## Демонстрация
+
+<p align="center">
+  <a href="docs/assets/demo/presentation.mp4">
+    <picture>
+      <source media="(prefers-reduced-motion: reduce)" srcset="docs/assets/demo/poster.jpg">
+      <img src="docs/assets/demo/presentation.gif" width="960" alt="Демонстрация Lab Grader: проверка работы, подтверждение прихода, защита, повторный круг и расписание">
+    </picture>
+  </a>
+</p>
+
+<div align="center">
+
+**Допуск → подтверждение прихода → защита → повторный круг → расписание**
+
+[▶ MP4 со звуком · 1080p / 60 fps](docs/assets/demo/presentation.mp4) · [Открыть GIF](docs/assets/demo/presentation.gif) · [Запустить песочницу](docs/queue/SANDBOX.md)
+
+</div>
+
+GIF показывает весь 50-секундный сценарий без звука. Полная версия MP4 содержит звуковые акценты. Интерфейс и записи сняты на вымышленных данных песочницы.
+
+### Три экрана приложения
+
+<table>
+<tr>
+<th width="33%">Студент</th><th width="33%">Преподаватель</th><th width="33%">Расписание</th>
+</tr>
+<tr>
+<td align="center" valign="top"><a href="docs/assets/screenshots/student.png"><img src="docs/assets/screenshots/student.png" height="290" alt="Студент: подтверждение прихода и список группы"></a></td>
+<td align="center" valign="top"><a href="docs/assets/screenshots/teacher.png"><img src="docs/assets/screenshots/teacher.png" height="290" alt="Преподаватель: предварительный состав, статистика и управление очередью"></a></td>
+<td align="center" valign="top"><a href="docs/assets/screenshots/schedule.png"><img src="docs/assets/screenshots/schedule.png" height="290" alt="Расписание: занятия группы, переносы и источник"></a></td>
+</tr>
+<tr>
+<td valign="top">Своё место и ответ «Приду / не приду».</td>
+<td valign="top">Состав занятия, вызов и результаты. На скриншоте пара ещё не началась, поэтому действия неактивны.</td>
+<td valign="top">Занятия, ручные изменения и выбор источника расписания.</td>
+</tr>
+</table>
+
+Нажми на снимок, чтобы открыть его в полном размере. [Галерея экранов](docs/assets/screenshots/README.md).
 
 ## Что добавлено
 
