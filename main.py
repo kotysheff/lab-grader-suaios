@@ -123,7 +123,7 @@ logger.info(f"Logging initialized. Log file: {log_file}")
 
 load_dotenv()
 app = FastAPI()
-COURSES_DIR = "courses"
+COURSES_DIR = os.getenv("COURSES_DIR", "courses")
 CREDENTIALS_FILE = os.getenv("CREDENTIALS_FILE", "credentials.json")  # Файл с учетными данными Google API
 
 SHEETS_SCOPE = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -1435,6 +1435,8 @@ class QueueActionRequest(BaseModel):
     candidate_id: int | None = None
     outcome: str | None = None
     request_id: str | None = None
+    student_id: int | None = None
+    command_id: int | None = None
 
 
 @app.post('/admin/courses/{course_id}/groups/{group_id}/queue/actions')
@@ -1449,7 +1451,20 @@ def teacher_queue_action(request: Request, course_id: str, group_id: str, data: 
                                now=now, session_id=data.session_id)
         if data.entry_id is not None and data.entry_id not in {row['entry_id'] for row in view['attempts']}:
             raise ValueError('Попытка не относится к выбранному занятию')
-        if data.action in ('close_enrollment', 'open_enrollment'):
+        undo_info = None
+        if data.action in ('call','uncall','pass','fail','absent','arrived','add_student','undo'):
+            from grading.defense_queue import rounds
+            if data.action == 'undo':
+                rounds.undo(store,data.session_id,data.command_id,now=time.time(),actor=admin)
+            else:
+                undo_info=rounds.execute(store,data.session_id,data.action,now=time.time(),actor=admin,
+                    request_id=data.request_id,entry_id=data.entry_id,student_id=data.student_id)
+                if data.action == 'pass':
+                    try:
+                        _sync_defense_queue(course_id,group_id,course,force=True)
+                    except Exception:
+                        logger.exception('Admission of the next lab will refresh later')
+        elif data.action in ('close_enrollment', 'open_enrollment'):
             op.set_enrollment(store, data.session_id, closed=data.action == 'close_enrollment', now=now, actor=admin)
         elif data.action == 'call_next':
             op.call_next(store, data.session_id, now=now, actor=admin, request_id=data.request_id)
@@ -1469,8 +1484,19 @@ def teacher_queue_action(request: Request, course_id: str, group_id: str, data: 
             op.add_to_tail(store, data.session_id, data.candidate_id, now=now, actor=admin)
         else:
             raise ValueError('Неизвестное действие или не передан участник')
-        return op.teacher_view(store, course_id, group_id, course, deadlines_available=summary['deadlines_available'],
+        result=op.teacher_view(store, course_id, group_id, course, deadlines_available=summary['deadlines_available'],
                                now=now, session_id=data.session_id)
+        if undo_info is not None:
+            from grading.defense_queue.rounds import preferences
+            if undo_info.pop('_new',False):
+                # Start the visible undo window after any source refresh, not before network I/O.
+                expires=time.time()+preferences(store,course_id)['undo_seconds']
+                with store.transaction() as con:
+                    con.execute('UPDATE queue_undo SET expires_at=? WHERE command_id=?',(expires,undo_info['command_id']))
+                undo_info['expires_at']=expires
+            undo_info['remaining_ms']=max(0,int((undo_info['expires_at']-time.time())*1000))
+            result['undo']=undo_info
+        return result
     except Exception as error:
         _queue_error(error)
 
@@ -1478,14 +1504,38 @@ def teacher_queue_action(request: Request, course_id: str, group_id: str, data: 
 @app.get('/admin/courses/{course_id}/queue/settings')
 def get_queue_settings(request: Request, course_id: str, group_id: str | None = None, admin: str = Depends(require_admin)):
     try:
-        _, course, summary = _queue_admin_context(course_id, group_id)
+        store, course, summary = _queue_admin_context(course_id, group_id)
+        from grading.defense_queue.rounds import preferences
         from grading.defense_queue.policy import resolve_mode
         mode = resolve_mode(deadlines_available=summary['deadlines_available'], random_override=course.get('queue', {}).get('random', False)) if summary else None
         return {'mode_locked': mode.locked if mode else None, 'mode': mode.name if mode else None,
+                'preferences': preferences(store,course_id),
                 'sheet_deadlines': summary.get('sheet_deadlines', {}) if summary else {},
                 'timezone': summary.get('timezone') if summary else course.get('queue', {}).get('timezone', course.get('timezone', 'Europe/Moscow')),
                 'queue': course.get('queue', {}), 'labs': [{'key': str(key), 'title': value.get('short-name', str(key))}
                                                         for key, value in course.get('labs', {}).items()]}
+    except Exception as error:
+        _queue_error(error)
+
+
+class QueuePreferencesRequest(BaseModel):
+    auto_repeat: bool
+    undo_seconds: int = Field(ge=1, le=10, strict=True)
+
+
+@app.put('/admin/courses/{course_id}/queue/preferences')
+def set_queue_preferences(request: Request, course_id: str, data: QueuePreferencesRequest,
+                          admin: str = Depends(require_admin)):
+    import time
+    from grading.defense_queue.rounds import save_preferences,preferences
+    from grading.defense_queue.sync import course_timezone
+    try:
+        store,course,_=_queue_admin_context(course_id)
+        with store.transaction() as con:
+            con.execute("INSERT INTO courses(course_id,title,timezone,schedule_source) VALUES (?,?,?,'manual') ON CONFLICT DO NOTHING",
+                        (course_id,course.get('name',course_id),course_timezone(course)))
+        save_preferences(store,course_id,auto_repeat=data.auto_repeat,undo_seconds=data.undo_seconds,now=int(time.time()))
+        return {'status':'updated','preferences':preferences(store,course_id)}
     except Exception as error:
         _queue_error(error)
 

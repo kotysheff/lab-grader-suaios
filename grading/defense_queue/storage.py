@@ -23,10 +23,10 @@ class QueueStore:
             con.execute("BEGIN IMMEDIATE")
             try:
                 version = con.execute("PRAGMA user_version").fetchone()[0]
-                if version > 6:
+                if version > 7:
                     raise ValueError("Версия базы очереди новее поддерживаемой")
                 migrations = Path(__file__).with_name("migrations")
-                for target in range(version + 1, 7):
+                for target in range(version + 1, 8):
                     path = next(migrations.glob(f"{target:03d}_*.sql"))
                     statement = ""
                     for line in path.read_text().splitlines(keepends=True):
