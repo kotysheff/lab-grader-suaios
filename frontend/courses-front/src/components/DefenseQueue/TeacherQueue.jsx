@@ -1,4 +1,5 @@
 import { queueError, q, useQueueLanguage, QueueLanguage } from "./locale";
+import { ErrorNotice } from "./Notice";
 import { Hint } from "./Hint";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { fetchCourses, fetchGroups, queueGroupPath, queueRequest } from "../../api";
@@ -131,10 +132,7 @@ export function TeacherQueue({
       <label>{q("Занятие")}<select disabled={busy} value={sessionId} onChange={e => setSessionId(e.target.value)}><option value="">{q("Выберите занятие")}</option>{filtered.map(s => <option key={s.session_id} value={s.session_id}>{group === ALL_GROUPS && `${s.group_id} · `}{displayDate(s.starts_at, s.timezone)}{s.enrollment_status === "cancelled" ? q(" · отменено") : ""}</option>)}</select></label>
     </div>
     <nav className="queue-tabs" aria-label={q("Разделы панели")}>{[["queue", q("Очередь")], ["schedule", q("Расписание")], ["settings", q("Дедлайны и порядок")], ["preferences", q("Настройки")]].map(([key, label]) => <button key={key} disabled={busy} aria-current={tab === key ? "page" : undefined} className={tab === key ? "primary" : ""} onClick={() => setTab(key)}>{label}</button>)}</nav>
-    {(error || sessions.error || roster.error) && <p role="alert" className="queue-notice queue-error">{queueError(error || sessions.error || roster.error)} <button onClick={() => {
-        roster.refresh();
-        sessions.refresh();
-      }}>{q("Повторить")}</button></p>}
+    <ErrorNotice error={error || sessions.error || roster.error} />
     <div className={`queue-feedback ${busy ? "is-saving" : ""}`} role="status" aria-live="polite" aria-atomic="true"><span className="queue-spinner" aria-hidden="true" />{busy ? q("Сохраняется…") : ""}</div>
     <div className="queue-content" key={tab} aria-busy={busy}>
     {tab === "queue" && <>

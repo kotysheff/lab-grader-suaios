@@ -230,3 +230,17 @@ body:has(.queue-registration) #root { width:100%; }
   .queue-round-actions .queue-absence-action { margin-left:0; }
   .queue-undo-notice { flex-wrap:wrap; gap:8px; bottom:16px; }
 }
+
+.queue-row.unconfirmed .queue-name { text-decoration:line-through; }
+.queue-round-row.status-absent strong { text-decoration:line-through; color:var(--queue-muted); }
+.queue-read-only .queue-round-row { cursor:default; }
+.queue-read-only .queue-round-actions { min-height:44px; }
+.queue-round-row.is-own strong::after { content:" •"; color:var(--queue-success-text); }
+.queue-error-toast { position:fixed; bottom:24px; left:50%; transform:translateX(-50%); z-index:1600; display:flex; align-items:center; gap:16px; max-width:calc(100vw - 32px); width:min(640px,calc(100vw - 32px)); padding:16px; border:1px solid var(--queue-danger-text); border-radius:10px; background:var(--q-red-50); color:var(--queue-danger-text); box-shadow:0 8px 24px rgb(0 0 0 / .15); }
+.queue-error-toast span { flex:1; font-size:13px; }
+.queue-error-toast button { padding:10px; min-width:44px; border:0; background:transparent; }
+.queue-error-toast svg { width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:1.5; }
+
+.queue-round-row.status-failed .queue-attempt-meta,.queue-round-row.status-failed td:nth-child(2) a { color:var(--queue-danger-text); }
+.queue-round-row.status-called .queue-attempt-meta,.queue-round-row.status-called td:nth-child(2) a { color:var(--queue-warning-text); }
+.queue-round-row.status-defended .queue-attempt-meta,.queue-round-row.status-defended td:nth-child(2) a { color:var(--queue-success-text); }

@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { q, useQueueLanguage, queueError } from "./locale";
+import { ErrorNotice } from "./Notice";
 import { queueRequest } from "../../api";
 import { useRowMotion } from "./useRowMotion";
 
 const resultLabels = { waiting:"Ожидает", called:"Вызван", defended:"Сдал", failed:"Не сдал", no_show:"Не пришёл" };
 const notices = {pass:"Результат «Сдал» сохранён",fail:"Результат «Не сдал» сохранён",absent:"Студент перенесён в список отсутствующих",arrived:"Студент добавлен в новый круг",add_student:"Студент добавлен в новый круг"};
 
-export function RoundQueue({ data, action, busy }) {
+export function RoundQueue({ data, action, busy, readOnly = false, ownGithub = "" }) {
   useQueueLanguage();
   const [selected,setSelected]=useState(null);
   const [adding,setAdding]=useState(false);
@@ -45,34 +46,34 @@ export function RoundQueue({ data, action, busy }) {
   function rowView(row,index,isAbsent=false){
     const status=row.attempt?.status || 'waiting';
     const picked=selected===row.row_key;
-    const available=!busy && data.service_open && (isAbsent ? Date.now()/1000<data.session.ends_at : true);
+    const available=!readOnly && !busy && data.service_open && (isAbsent ? Date.now()/1000<data.session.ends_at : true);
     const entry=row.attempt?.entry_id;
-    return <tr key={row.row_key} data-queue-row={row.row_key} className={`queue-round-row ${picked?'is-selected':''} status-${isAbsent?'absent':status}`}
-      tabIndex={0} aria-label={`${row.full_name}, ${q(isAbsent?'Не придёт':resultLabels[status])}`} aria-selected={picked}
-      onClick={()=>choose(row)} onKeyDown={e=>{if(e.target===e.currentTarget && ['Enter',' '].includes(e.key)){e.preventDefault();choose(row);}}}>
+    return <tr key={row.row_key} data-queue-row={row.row_key} className={`queue-round-row ${picked?'is-selected':''} ${ownGithub && row.github.toLowerCase()===ownGithub.toLowerCase()?'is-own':''} status-${isAbsent?'absent':status}`}
+      tabIndex={readOnly?undefined:0} aria-label={`${row.full_name}, ${q(isAbsent?'Не придёт':resultLabels[status])}`} aria-selected={readOnly?undefined:picked}
+      onClick={readOnly?undefined:()=>choose(row)} onKeyDown={readOnly?undefined:e=>{if(e.target===e.currentTarget && ['Enter',' '].includes(e.key)){e.preventDefault();choose(row);}}}>
       <td>{index+1}</td><td>{identity(row)}</td><td><div className={`queue-round-actions ${status==='called'?'three-actions':''}`} onClick={e=>e.stopPropagation()}>
-      {picked && (isAbsent ? <button disabled={!available} className="primary" onClick={()=>run({action:'arrived',student_id:row.student_id})}>{q("Пришёл")}</button>
+      {readOnly ? <span className="queue-status">{q(isAbsent?'Не придёт':resultLabels[status])}</span> : (isAbsent ? <button disabled={!available} className="primary" onClick={()=>run({action:'arrived',student_id:row.student_id})}>{q("Пришёл")}</button>
         : status==='waiting' ? <><button className="primary" disabled={!available || !entry} onClick={()=>run({action:'call',entry_id:entry})}>{q("Вызвать")}</button><button className="queue-absence-action" disabled={!available || !entry} onClick={()=>run({action:'absent',entry_id:entry})}>{q("Не пришёл")}</button></>
         : status==='called' ? <><button className="queue-pass-action" disabled={!available} onClick={()=>run({action:'pass',entry_id:entry})}>{q("Сдал")}</button><button className="queue-fail-action" disabled={!available} onClick={()=>run({action:'fail',entry_id:entry})}>{q("Не сдал")}</button><button disabled={!available} onClick={()=>run({action:'uncall',entry_id:entry})}>{q("Отменить вызов")}</button></> : null)}
       </div></td></tr>;
   }
-  const heading=<thead><tr><th>{q("№")}</th><th>{q("Студент / GitHub")}</th><th>{q("Действия")}</th></tr></thead>;
+  const heading=<thead><tr><th>{q("№")}</th><th>{q("Студент / GitHub")}</th><th>{q(readOnly?"Статус":"Действия")}</th></tr></thead>;
   const columns=<colgroup><col className="round-number"/><col className="round-person"/><col className="round-actions"/></colgroup>;
-  return <section className="queue-rounds" aria-label={q("Очередь занятия")}>
-    <h3>{q("Придут на занятие")}</h3><p className="queue-muted queue-select-hint">{q("Выберите строку студента, чтобы показать действия.")}</p>
+  return <section className={`queue-rounds ${readOnly?"queue-read-only":""}`} aria-label={q("Очередь занятия")}>
+    <h3>{q("Придут на занятие")}</h3>
     <div className="queue-table-wrap"><table className="queue-table queue-round-table" aria-label={q("Придут на занятие")}>{columns}{heading}<tbody ref={body}>
       {first.map((row,i)=>rowView(row,i))}
       <tr className="queue-round-divider"><td colSpan={3}><span>{q("Новый круг")}</span></td></tr>
       {repeats.map((row,i)=>rowView(row,first.length+i))}
     </tbody></table>
     {!rows.length && <p className="queue-empty">{q("Пока никто не подтвердил участие.")}</p>}
-    <div className="queue-add-student"><button disabled={busy || !data.service_open || Date.now()/1000>=data.session.ends_at} aria-expanded={adding} onClick={()=>setAdding(!adding)}>{q("Добавить студента")}</button>
+    {!readOnly && <div className="queue-add-student"><button disabled={busy || !data.service_open || Date.now()/1000>=data.session.ends_at} aria-expanded={adding} onClick={()=>setAdding(!adding)}>{q("Добавить студента")}</button>
       {adding && <form className="queue-toolbar" onSubmit={e=>{e.preventDefault();run({action:'add_student',student_id:Number(student)});}}>
         <label>{q("Студент")}<select required value={student} disabled={busy} onChange={e=>setStudent(e.target.value)}><option value="">{q("Выберите студента")}</option>{(data.student_catalog || []).map(item=><option key={item.student_id} value={item.student_id}>{item.full_name}</option>)}</select></label>
         <button disabled={busy || !student}>{q("Добавить в новый круг")}</button></form>}
-    </div></div>
+    </div>}</div>
     <h3>{q("Не придут на занятие")}</h3><div className="queue-table-wrap"><table className="queue-table queue-round-table" aria-label={q("Не придут на занятие")}>{columns}{heading}<tbody>{absent.map((row,i)=>rowView(row,i,true))}</tbody></table>{!absent.length && <p className="queue-empty">{q("Отсутствующих нет.")}</p>}</div>
-    {notice && <div className="queue-undo-notice" role="status" aria-live="polite"><span>{q(notice.label)}</span><button disabled={busy} onClick={undo}>{q("Отменить")}</button><button className="queue-dismiss" aria-label={q("Закрыть уведомление")} onClick={()=>setNotice(null)}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 5 10 10M15 5 5 15"/></svg></button><span className="queue-undo-timer" style={{animationDuration:`${notice.remaining_ms}ms`}} /></div>}
+    {!readOnly && notice && <div className="queue-undo-notice" role="status" aria-live="polite"><span>{q(notice.label)}</span><button disabled={busy} onClick={undo}>{q("Отменить")}</button><button className="queue-dismiss" aria-label={q("Закрыть уведомление")} onClick={()=>setNotice(null)}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 5 10 10M15 5 5 15"/></svg></button><span className="queue-undo-timer" style={{animationDuration:`${notice.remaining_ms}ms`}} /></div>}
   </section>;
 }
 
@@ -87,6 +88,6 @@ export function QueuePreferences({course}){
     <label className="queue-checkbox"><input type="checkbox" checked={config.auto_repeat} disabled={busy} onChange={e=>patch({auto_repeat:e.target.checked})}/>{q("Автоматически добавлять не сдавших в новый круг")}</label>
     <p className="queue-muted">{q("Завершённая попытка остаётся в списке. Повторная создаётся в конце, пока занятие не закончилось.")}</p>
     <label htmlFor="undo-duration">{q("Время для отмены действия, секунд")}</label><div className="queue-duration-controls"><input aria-label={q("Время для отмены действия, секунд")} type="range" min="1" max="10" step="1" disabled={busy} value={config.undo_seconds} onChange={e=>patch({undo_seconds:Number(e.target.value)})}/><input id="undo-duration" type="number" required min="1" max="10" step="1" disabled={busy} value={config.undo_seconds} onChange={e=>patch({undo_seconds:e.target.value})}/></div>
-    <button className="primary" disabled={busy}>{q("Сохранить настройки")}</button><p className="queue-settings-feedback" role="status">{saved?q("Настройки сохранены"):busy?q("Сохраняется…"):""}</p>{error && <p role="alert" className="queue-error">{queueError(error)}</p>}
+    <button className="primary" disabled={busy}>{q("Сохранить настройки")}</button><p className="queue-settings-feedback" role="status">{saved?q("Настройки сохранены"):busy?q("Сохраняется…"):""}</p><ErrorNotice error={error}/>
   </form>;
 }
