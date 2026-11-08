@@ -71,7 +71,7 @@ with tempfile.TemporaryDirectory(prefix='sandbox-test-',dir='data') as directory
         old_database=str(queue_store().path)
         assert client.post('/sandbox/reset').status_code==200
         assert str(queue_store().path)!=old_database
-        assert len(client.get(path+'/queue').json()['entries'])==5
+        assert len(client.get(path+'/queue').json()['entries'])==6
         assert client.get('/courses/real-teacher-course').status_code==409
 print('sandbox full journey OK')
 '''

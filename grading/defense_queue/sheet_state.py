@@ -33,13 +33,18 @@ def parse_lab_cell(raw: str | None) -> LabState:
 
 def first_admitted_lab(required_order: list[str], cells: Mapping[str, str | None], *,
                        defended_in_history: frozenset[str] = frozenset()) -> str | None:
-    for lab_key in required_order:
-        state = parse_lab_cell(cells.get(lab_key))
-        if lab_key in defended_in_history or state.defended:
-            continue
-        # Более поздняя допущенная работа не заменяет первую обязательную.
-        return lab_key if state.admitted else None
-    return None
+    return select_queue_lab(required_order,cells,defended_in_history=defended_in_history)[0]
+
+
+def select_queue_lab(required_order, cells, *, defended_in_history=frozenset()):
+    """Only work after the last defended lab can determine the student's priority."""
+    states = {key: parse_lab_cell(cells.get(key)) for key in required_order}
+    frontier = max((index for index, key in enumerate(required_order)
+                    if states[key].defended or key in defended_in_history), default=-1)
+    following = required_order[frontier + 1:]
+    admitted = next((key for key in following if states[key].admitted), None)
+    target = admitted or (following[0] if following else None)
+    return admitted, target, not following
 
 
 @dataclass(frozen=True)

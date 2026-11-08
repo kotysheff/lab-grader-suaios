@@ -120,12 +120,16 @@ def queue_view(store, course_id, group_id, course, *, deadlines_available, now, 
         if now >= session['starts_at']:
             con.execute('UPDATE session_participation SET frozen_at=? WHERE session_id=? AND frozen_at IS NULL',
                         (session['starts_at'], session['session_id']))
-    rows = store.roster(session['session_id'])
+    from .roster import ordering_rows
+    rows = ordering_rows(store, session, now=now, mode=mode.name)
+    if rows is None:
+        rows = store.roster(session['session_id'])
     if now >= session['starts_at']:
         rows = [row for row in rows if row['frozen_at'] is not None]
+    rows = [dict(row) for row in rows]
     zone = course_timezone(course)
     anchor = date.fromisoformat(course.get('queue', {}).get('semester_week_anchor', '1970-01-05'))
-    candidates = [CandidateOrder(row['candidate_id'], row['qualified_at'],
+    candidates = [CandidateOrder(row['candidate_id'], row.get('order_at', row['qualified_at']),
                   datetime.fromtimestamp(row['deadline_at'], tz=timezone.utc) if row['deadline_at'] is not None else None,
                   row['random_key'], deadline_available=bool(row['deadline_available'])) for row in rows]
     ordered = order_candidates(candidates, mode=mode, session_start=datetime.fromtimestamp(min(now, session['starts_at']), tz=timezone.utc),
@@ -137,7 +141,9 @@ def queue_view(store, course_id, group_id, course, *, deadlines_available, now, 
         row = by_id[candidate.candidate_id]
         if row['will_attend']:
             position += 1
-        entries.append({'candidate_id': row['candidate_id'], 'full_name': row['full_name'],
+        entries.append({'student_id': row.get('student_id'), 'ready': row.get('ready', True),
+                        'virtual_priority': row.get('virtual_priority', False), 'roster_order': len(entries),
+                        'candidate_id': row['candidate_id'], 'full_name': row['full_name'],
                         'github': row['github_login'], 'lab_key': row['lab_key'],
                         'qualified_at': row['qualified_at'], 'deadline_at': row['deadline_at'], 'deadline_available': bool(row['deadline_available']), 'priority': None if mode.name == 'random' or candidate.deadline is None else priority_for(candidate.deadline, datetime.fromtimestamp(min(now, session['starts_at']), timezone.utc), week_anchor=anchor, timezone=zone), 'will_attend': bool(row['will_attend']),
                         'answered': bool(row['attendance_answered']),

@@ -27,20 +27,22 @@ def decorate_view(store, view, *, now):
     active = {row['student_id'] for row in attempts if row['status'] in ('waiting','called')}
     with store.connection() as con:
         students = {r['github_login']:dict(r) for r in con.execute('SELECT * FROM students')}
+        public_logins = {r['student_id']:r['github_login'] or '' for r in con.execute('SELECT student_id,github_login FROM queue_members WHERE course_id=? AND group_id=?',(session['course_id'],session['group_id']))}
         catalog = [dict(row) for row in con.execute('''SELECT s.student_id,s.full_name,s.github_login,
             (SELECT c.candidate_id FROM queue_candidates c WHERE c.student_id=s.student_id AND c.course_id=? AND c.group_id=? AND c.status='eligible') AS candidate_id
-            FROM students s WHERE EXISTS (SELECT 1 FROM queue_candidates c WHERE c.student_id=s.student_id AND c.course_id=? AND c.group_id=?) ORDER BY s.full_name''',
-            (session['course_id'],session['group_id'],session['course_id'],session['group_id']))]
+            FROM students s WHERE EXISTS (SELECT 1 FROM queue_candidates c WHERE c.student_id=s.student_id AND c.course_id=? AND c.group_id=?) OR EXISTS (SELECT 1 FROM queue_members m WHERE m.student_id=s.student_id AND m.course_id=? AND m.group_id=?) ORDER BY s.full_name''',
+            (session['course_id'],session['group_id'],session['course_id'],session['group_id'],session['course_id'],session['group_id']))]
+        for item in catalog:
+            item['github_login'] = public_logins.get(item['student_id'],item['github_login'])
     rows = []
     for attempt in attempts:
         if attempt['status'] in ('waiting','called','defended','failed'):
             rows.append(dict(row_key=f"entry-{attempt['entry_id']}",student_id=attempt['student_id'],
-                full_name=attempt['full_name_snapshot'],github=attempt['github_snapshot'],lab_key=attempt['lab_key'],
+                full_name=attempt['full_name_snapshot'],github=public_logins.get(attempt['student_id'],attempt['github_snapshot']),lab_key=attempt['lab_key'],
                 priority=attempt['priority'],attempt=attempt,is_repeat=bool(attempt['is_repeat'])))
     absent = []
     for row in view['entries']:
-        student = students[row['github'].lower()]
-        sid = student['student_id']
+        sid = row.get('student_id') or students[row['github'].lower()]['student_id']
         last = latest.get(sid)
         missing = sid not in active and (last['status']=='no_show' if last else not row['will_attend'])
         if missing:
