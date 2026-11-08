@@ -2,6 +2,7 @@
 from pathlib import Path
 import subprocess
 import os
+import sys
 
 ROOT=Path(__file__).parents[1]
 
@@ -75,6 +76,6 @@ with tempfile.TemporaryDirectory(prefix='sandbox-test-',dir='data') as directory
         assert client.get('/courses/real-teacher-course').status_code==409
 print('sandbox full journey OK')
 '''
-    result=subprocess.run([str(ROOT/'.venv/bin/python'),'-c',script],cwd=ROOT,env=dict(os.environ),text=True,capture_output=True,timeout=60)
+    result=subprocess.run([sys.executable,'-c',script],cwd=ROOT,env=dict(os.environ),text=True,capture_output=True,timeout=60)
     assert result.returncode==0,result.stdout+'\n'+result.stderr
     assert 'sandbox full journey OK' in result.stdout

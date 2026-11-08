@@ -4,14 +4,24 @@ import importlib.util
 from unittest.mock import Mock,patch
 import signal
 import os
+import shutil
+import sys
 
 ROOT=Path(__file__).parents[1]
 
 
-def test_single_command_launchers_expose_flags_without_starting_services():
+def test_single_command_launchers_expose_flags_without_starting_services(tmp_path):
+    checkout=tmp_path/'checkout'
+    checkout.mkdir()
+    shutil.copytree(ROOT/'scripts',checkout/'scripts')
+    for command in ('start-main','start-sandbox'):
+        shutil.copy2(ROOT/command,checkout/command)
+    assert not (checkout/'.venv').exists()
+    # CI installs into its active interpreter, not necessarily a project-local virtualenv.
+    environment=dict(os.environ,PATH=str(Path(sys.executable).parent)+os.pathsep+os.environ.get('PATH',''))
     for command in ('start-main','start-sandbox'):
         assert os.access(ROOT/command,os.X_OK)
-        result=subprocess.run([str(ROOT/command),'--help'],cwd='/private/tmp',capture_output=True,text=True,timeout=10)
+        result=subprocess.run([str(checkout/command),'--help'],cwd=tmp_path,env=environment,capture_output=True,text=True,timeout=10)
         assert result.returncode==0,result.stderr
         for flag in ('--port','--frontend-port','--check','--backend-only'):
             assert flag in result.stdout
