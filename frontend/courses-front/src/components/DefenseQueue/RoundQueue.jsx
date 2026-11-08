@@ -42,7 +42,7 @@ export function RoundQueue({ data, action, busy, readOnly = false, ownGithub = "
     setSelected(null);
   }
   function choose(row){if(!busy)setSelected(value=>value===row.row_key?null:row.row_key);}
-  function identity(row){return <><strong>{row.full_name}</strong><br/><a href={`https://github.com/${encodeURIComponent(row.github)}`} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()}>{row.github}</a><small className="queue-attempt-meta">{q("Работа")} {row.lab_key}{row.priority!=null ? ` · ${q("Приоритет")} ${row.priority}` : ""}{row.attempt ? ` · ${q(resultLabels[row.attempt.status] || row.attempt.status)}` : ""}</small></>;}
+  function identity(row){return <><strong>{row.full_name}</strong><br/>{row.github ? <a href={`https://github.com/${encodeURIComponent(row.github)}`} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()}>{row.github}</a> : <span className="queue-muted">{q("GitHub не указан")}</span>}<small className="queue-attempt-meta">{row.priority!=null ? `${q("Приоритет")} ${row.priority}` : ""}{row.attempt ? `${row.priority!=null ? " · " : ""}${q(resultLabels[row.attempt.status] || row.attempt.status)}` : ""}</small></>;}
   function rowView(row,index,isAbsent=false){
     const status=row.attempt?.status || 'waiting';
     const picked=selected===row.row_key;

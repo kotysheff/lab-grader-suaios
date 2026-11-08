@@ -66,21 +66,20 @@ export function StudentQueue({
       <strong><Hint text="По умолчанию участие не подтверждено. «Да» включает в список сдающих. Ответ можно менять до начала занятия. «Нет» сохраняет допуск к работе, но исключает из вызова на это занятие.">{q("Придёте сдавать на это занятие?")}</Hint></strong>
       <p className="queue-attendance-hint" aria-live="polite">{!me.answered ? q("По умолчанию вы не включены в состав приходящих.") : me.will_attend ? q("Приход подтверждён. Ответ можно изменить до начала занятия.") : q("Вы отметили, что не придёте. Ответ можно изменить до начала занятия.")}</p>
       <div className="queue-actions">
-        <button aria-pressed={me.will_attend} disabled={!data.attendance_open || data.stale || saving || checking || !canIdentify(identity)} onClick={() => choose(true)}>{q("Да, я приду")}</button>
-        <button aria-pressed={!me.will_attend} disabled={!data.attendance_open || data.stale || saving || checking || !canIdentify(identity)} onClick={() => choose(false)}>{q("Нет, не приду")}</button>
+        <button aria-pressed={me.will_attend} disabled={!data.attendance_open || me.ready === false || data.stale || saving || checking || !canIdentify(identity)} onClick={() => choose(true)}>{q("Да, я приду")}</button>
+        <button aria-pressed={!me.will_attend} disabled={!data.attendance_open || me.ready === false || data.stale || saving || checking || !canIdentify(identity)} onClick={() => choose(false)}>{q("Нет, не приду")}</button>
       </div>
+      {me.ready === false && <p>{q("Место предварительное. Подтвердить приход можно после успешной проверки работы.")}</p>}
       {!data.attendance_open && <p>{q("Изменение посещения недоступно для этого занятия.")}</p>}
       {!canIdentify(identity) && <p>{q("Заполните ФИО и GitHub в форме выше.")}</p>}
     </div>}
     {data?.read_only && <><p className="queue-notice">{q("Сейчас показана очередь текущего занятия. Запись на следующее откроется:")} {displayDate(data.enrollment_opens_at,data.session.timezone)}</p><RoundQueue data={data} readOnly ownGithub={identity.github} busy={false}/></>}
     {!data?.read_only && <ol className="queue-list">
       {displayRows.map(row => row.preview ? <li key="preview" className="queue-row queue-preview">
-        <span className="queue-rank">{data?.preview?.position ?? "?"}</span><div><strong>{identity.surname} {identity.name}</strong><small>{labId}{q("· Предварительная позиция")}</small></div><small>{q("Проверка…")}</small>
+        <span className="queue-rank">{data?.preview?.position ?? "?"}</span><div><strong>{identity.surname} {identity.name}</strong><small>{q("Предварительная позиция")}</small></div><small>{q("Проверка…")}</small>
       </li> : <li key={row.candidate_id} className={`queue-row ${row.state} ${row.candidate_id === me?.candidate_id ? "mine" : ""}`}>
         <span className="queue-rank">{row.position ?? "—"}</span>
-        <div><strong className="queue-name">{row.full_name}</strong><small>{row.lab_title || q("Работа {{v0}}", {
-              v0: row.lab_key
-            })} · <a href={`https://github.com/${encodeURIComponent(row.github)}`} target="_blank" rel="noreferrer">{row.github}</a></small></div>
+        <div><strong className="queue-name">{row.full_name}</strong><small>{row.github ? <a href={`https://github.com/${encodeURIComponent(row.github)}`} target="_blank" rel="noreferrer">{row.github}</a> : q("GitHub не указан")}{row.priority != null ? ` · ${q("Приоритет")} ${row.priority}` : ""}</small></div>
         <small>{q(entryLabel(row))}</small>
       </li>)}
     </ol>}

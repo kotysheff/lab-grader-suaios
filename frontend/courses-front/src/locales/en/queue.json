@@ -262,5 +262,8 @@
   "Студенты, которых преподаватель отметил как отсутствующих на этом занятии.": "Absences marked by the teacher in this class.",
   "Текущая очередь": "Current queue",
   "Сейчас показана очередь текущего занятия. Запись на следующее откроется:": "This is the current class queue. Enrollment for the next class opens at:",
-  "Запись на следующее занятие откроется через 10 минут после окончания текущего": "Enrollment for the next class opens ten minutes after the current class ends"
+  "Запись на следующее занятие откроется через 10 минут после окончания текущего": "Enrollment for the next class opens ten minutes after the current class ends",
+  "GitHub не указан": "GitHub not specified",
+  "Место предварительное. Подтвердить приход можно после успешной проверки работы.": "This place is provisional. Attendance can be confirmed after the lab passes its checks.",
+  "Предварительная позиция": "Provisional position"
 }

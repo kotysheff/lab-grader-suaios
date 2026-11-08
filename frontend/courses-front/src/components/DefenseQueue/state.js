@@ -3,7 +3,7 @@ export function cleanIdentity(value = {}) {
   return Object.fromEntries(["surname", "name", "patronymic", "github"].map(key => [key, typeof value?.[key] === "string" ? value[key] : ""]));
 }
 export const canIdentify = identity => Boolean(identity?.surname?.trim() && identity?.name?.trim() && identity?.github?.trim());
-export const ownEntry = (entries, github) => entries?.find(row => row.github?.toLowerCase() === github?.trim().toLowerCase());
+export const ownEntry = (entries, github) => github?.trim() ? entries?.find(row => row.github?.toLowerCase() === github?.trim().toLowerCase()) : undefined;
 export function entryLabel(row, { current, next } = {}) {
   if (current != null && (Array.isArray(current) ? current.includes(row.attempt?.entry_id) : row.attempt?.entry_id === current)) return "Сдаёт сейчас";
   if (next != null && row.attempt?.entry_id === next) return row.attempt.is_repeat ? "Следующий · повторно" : "Следующий";
