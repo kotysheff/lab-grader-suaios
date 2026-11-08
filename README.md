@@ -1,160 +1,185 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-reduced-motion: reduce)" srcset="docs/assets/readme/hero.svg">
-    <img src="docs/assets/readme/hero.gif" width="1200" alt="Lab Grader Defense Queue. Очередь защиты лабораторных с приоритетом от −1, сохранением состояния и историей.">
-  </picture>
+  <img src="docs/assets/readme/hero.svg" width="1200" alt="Lab Grader Defense Queue — очередь защиты лабораторных работ">
 </p>
 
 <div align="center">
 
 # Lab Grader · Defense Queue
 
-**Проверка работ, запись на занятие и порядок защиты в одном сервисе.**
+**От успешной проверки работы до защиты на занятии.**
 
 <p>
-  <a href="docs/queue/RUNBOOK.md">Запустить демо</a> ·
-  <a href="docs/queue/LIVE_CHECK.md">Проверить публичные данные без ключей</a> ·
-  <a href="research/queue-study/README.md">Исследование</a> ·
-  <a href="docs/adr/README.md">Архитектурные решения</a> ·
-  <a href="docs/hackathon/lab-grader-queue/README.md">ADR по шаблону задания</a> ·
-  <a href="docs/queue/README.md">Устройство очереди</a>
+  <a href="docs/hackathon/suaios/queue/VERIFICATION.md"><img src="docs/assets/readme/checks.svg" alt="Результаты локальных проверок от 08.11.2026"></a>
+</p>
+<p>
+  <a href="https://github.com/kotysheff/lab-grader-queue/actions/workflows/tests.yml"><img src="https://github.com/kotysheff/lab-grader-queue/actions/workflows/tests.yml/badge.svg" alt="GitHub Actions · Tests"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-334155?style=flat-square" alt="MIT"></a>
 </p>
 
-<img src="docs/assets/readme/stack.svg" width="680" alt="FastAPI, React и Vite, SQLite, приоритет от −1">
+[Демонстрация](#демонстрация) · [Посмотреть за 5 минут](docs/hackathon/suaios/queue/SANDBOX.md) · [Рабочий запуск](docs/hackathon/suaios/queue/RUNBOOK.md) · [Исследование](research/queue-study/README.md) · [ADR](docs/adr/README.md) · [Вся документация](docs/README.md)
+
+<img src="docs/assets/readme/stack.svg" width="680" alt="FastAPI · React и Vite · SQLite · приоритет от −1">
 
 </div>
 
-<br>
+## Демонстрация
 
-## От проверки работы до защиты
+<p align="center">
+  <a href="docs/assets/demo/presentation.mp4">
+    <picture>
+      <source media="(prefers-reduced-motion: reduce)" srcset="docs/assets/demo/poster.jpg">
+      <img src="docs/assets/demo/presentation.gif" width="960" alt="Демонстрация Lab Grader: проверка работы, подтверждение прихода, защита, повторный круг и расписание">
+    </picture>
+  </a>
+</p>
 
-В основе проекта существующий **Lab Grader Web**: студент указывает GitHub-аккаунт, сервис проверяет репозиторий и CI и сохраняет результат в Google-таблице курса. Модуль очереди добавляет список на занятие, подтверждение посещения и инструменты преподавателя.
+<div align="center">
 
-После допуска студент появляется в постоянной очереди своей группы. Он выбирает, придёт ли на ближайшую пару. В начале занятия сервер фиксирует состав; преподаватель вызывает студентов, отмечает результат и видит историю. SQLite сохраняет эти данные при перезапуске.
+**Допуск → подтверждение прихода → защита → повторный круг → расписание**
 
-> [!IMPORTANT]
-> Очередь организует порядок защиты. Модуль очереди не изменяет оценки в Google-таблице.
+[▶ MP4 со звуком · 1080p / 60 fps](docs/assets/demo/presentation.mp4) · [Открыть GIF](docs/assets/demo/presentation.gif) · [Запустить песочницу](docs/hackathon/suaios/queue/SANDBOX.md)
+
+</div>
+
+GIF показывает весь 50-секундный сценарий без звука. Полная версия MP4 содержит звуковые акценты. Интерфейс и записи сняты на вымышленных данных песочницы.
+
+### Три экрана приложения
 
 <table>
 <tr>
-<td width="33%" valign="top">
-<strong>01 / Студент</strong><br><br>
-Список ближайшей пары, предварительная позиция во время проверки, кнопки «Приду / не приду». Повторное открытие списка не требует запуска автотестов.<br><br>
-<a href="docs/queue/RUNBOOK.md#студент">Сценарий студента →</a>
-</td>
-<td width="33%" valign="top">
-<strong>02 / Преподаватель</strong><br><br>
-Весь состав занятия, все вызванные студенты и следующий, результаты защиты, повторные попытки в конце, статистика и история.<br><br>
-<a href="docs/queue/RUNBOOK.md#преподаватель">Панель преподавателя →</a>
-</td>
-<td width="33%" valign="top">
-<strong>03 / Расписание</strong><br><br>
-Ручные занятия, источник ГУАП и импорт другого вуза. Перенос сохраняет занятие и ответы студентов; ручные правки важнее обновления источника.<br><br>
-<a href="docs/queue/RUNBOOK.md#расписание-и-другие-вузы">Расписание и переносы →</a>
-</td>
+<th width="33%">Студент</th><th width="33%">Преподаватель</th><th width="33%">Расписание</th>
+</tr>
+<tr>
+<td align="center" valign="top"><a href="docs/assets/screenshots/student.png"><img src="docs/assets/screenshots/student.png" height="290" alt="Студент: подтверждение прихода и список группы"></a></td>
+<td align="center" valign="top"><a href="docs/assets/screenshots/teacher.png"><img src="docs/assets/screenshots/teacher.png" height="290" alt="Преподаватель: предварительный состав, статистика и управление очередью"></a></td>
+<td align="center" valign="top"><a href="docs/assets/screenshots/schedule.png"><img src="docs/assets/screenshots/schedule.png" height="290" alt="Расписание: занятия группы, переносы и источник"></a></td>
+</tr>
+<tr>
+<td valign="top">Своё место и ответ «Приду / не приду».</td>
+<td valign="top">Состав занятия, вызов и результаты. На скриншоте пара ещё не началась, поэтому действия неактивны.</td>
+<td valign="top">Занятия, ручные изменения и выбор источника расписания.</td>
 </tr>
 </table>
 
-## Порядок с нижней границей −1
+Нажми на снимок, чтобы открыть его в полном размере. [Галерея экранов](docs/assets/screenshots/README.md).
 
-```text
-Приоритет = max(−1, неделя дедлайна − неделя занятия)
+## Что добавлено
 
-    −1                    0                   +1, +2, …
-Просроченные         Текущий дедлайн       Будущие дедлайны
-    └─────────────────────┴───────────────────────┘
-                    Раньше → позже
-```
+В исходном Lab Grader студент выбирает группу и лабораторную, вводит ФИО и GitHub, затем регистрирует результат проверки. Очередь использует допуск из Google Sheets и добавляет список на ближайшее занятие, подтверждение прихода и панель преподавателя.
 
-При равных приоритетах приложение сохраняет порядок допуска. Повторная попытка после «Не сдал» попадает в общий конец. Если срок получить не удалось и ручного значения нет, сервер включает случайный режим. Явное отсутствие дедлайна учитывается отдельно.
+<table>
+<tr>
+<td width="33%" valign="top"><strong>01 / Студент</strong><br><br>Вся очередь группы, собственное место и ответ «Приду / не приду». Во время занятия — текущий порядок и результаты без управляющих кнопок.<br><br><a href="docs/hackathon/suaios/queue/RUNBOOK.md#студент">Открыть сценарий →</a></td>
+<td width="33%" valign="top"><strong>02 / Преподаватель</strong><br><br>Вызов нескольких студентов, результаты защиты, повторные круги, отмена ошибочного действия, статистика и история.<br><br><a href="docs/hackathon/suaios/queue/ROUNDS.md">Кнопки и состояния →</a></td>
+<td width="33%" valign="top"><strong>03 / Расписание</strong><br><br>ГУАП, ручные занятия и JSON-импорт для других вузов. Переносы, отмена и восстановление занятий; отдельные списки групп.<br><br><a href="docs/adr/0003-schedule-adapters.md">Устройство расписания →</a></td>
+</tr>
+</table>
 
-[Правила и исключения](docs/adr/0001-priority-policy.md) · [Сравнение моделей](research/queue-study/README.md)
+> [!IMPORTANT]
+> Модуль очереди не записывает оценки в Google Sheets. Существующая регистрация работы сохраняет `v`; преподаватель ведёт оценки и `vv` прежним способом.
 
-## Посмотреть за два терминала
+## Преподавателю: маршрут просмотра
 
-> [!TIP]
-> Демо использует настоящие API очереди и SQLite с вымышленными студентами. Docker, Google service account и GitHub-токен для него не нужны.
+1. **Запустить [песочницу](docs/hackathon/suaios/queue/SANDBOX.md)** и пройти регистрацию студента, вызов, результат и повторную попытку.
+2. Открыть **[исследование с графиками](research/queue-study/README.md)**: все модели, три финалиста и основания выбора −1.
+3. Прочитать **[архитектурные решения](docs/adr/README.md)**. Версии по шаблону задания находятся [в пакете ADR](docs/hackathon/suaios/README.md).
+4. Посмотреть **[подтверждённые проверки и отличия от задания](docs/hackathon/suaios/queue/VERIFICATION.md)**.
+5. Для собственного курса перейти к **[рабочему запуску](docs/hackathon/suaios/queue/RUNBOOK.md)**.
 
-Нужны **uv**, **Python 3.12** и **Node.js 20+**. Команды выполняются из корня репозитория.
+## Запуск без Docker
 
-**Терминал 1 · backend**
-
-```bash
-uv venv --python 3.12 --allow-existing .venv
-uv pip install --python .venv/bin/python -r requirements-dev.txt
-.venv/bin/python scripts/run_queue_demo.py
-```
-
-**Терминал 2 · frontend**
-
-```bash
-cd frontend/courses-front
-npm ci --legacy-peer-deps
-VITE_API_BASE_URL=http://localhost:8000 npm run dev -- --host localhost --port 5173 --strictPort
-```
-
-| Экран | Адрес | Данные для демо |
-|---|---|---|
-| Вход преподавателя | <http://localhost:5173/admin> | `demo` / `demo123` |
-| Очередь преподавателя | <http://localhost:5173/admin/courses/queue-demo/queue> | Открыть после входа |
-| Страница студента | <http://localhost:5173/course/queue-demo/group/DEMO-01/lab/1> | Иванов / Иван / Иванович / `demo-ivan` |
-
-У студента нужно открыть вкладку **«Список на занятие»**. Допуски в демо уже подготовлены. Новый запуск создаёт отдельный набор данных.
+Нужны **Python 3.12**, **Node.js 20+** и npm. Команды выполняются из корня репозитория.
 
 <details>
-<summary><strong>Настроить настоящий курс вместо демо</strong></summary>
+<summary><strong>Первый запуск: установить зависимости</strong></summary>
 
-Для работы с реальными репозиториями и Google-таблицей нужны собственные ключи и конфигурация курса. Порядок настройки описан в [локальной разработке](docs/DEVELOPMENT.md), включение очереди и её постоянной базы в [инструкции очереди](docs/queue/RUNBOOK.md).
+```bash
+python3.12 -m venv .venv
+.venv/bin/python -m pip install -r requirements-dev.txt
+npm ci --prefix frontend/courses-front --legacy-peer-deps
+```
 
-Docker остаётся дополнительным способом запуска. Для него подготовлены `backend.Dockerfile` и `docker-compose.example.yaml` с постоянным томом SQLite.
+Если Python устанавливается через uv: `uv venv --python 3.12 .venv`. Исследование имеет отдельные зависимости: [инструкция](research/queue-study/README.md).
 
 </details>
 
-## Исследование → решение → реализация
-
-| Материал | Что внутри | Открыть |
+| Режим | Команда / инструкция | Внешние доступы |
 |---|---|---|
-| **Вычислительное исследование** | Восемь правил очереди, три финалиста, распределения баллов, чувствительность и экзаменационные сценарии | [Статья и графики](research/queue-study/README.md) |
-| **ADR-0001** | Почему команда выбрала нижнюю границу −1 и как приложение упорядочивает работы | [Приоритет](docs/adr/0001-priority-policy.md) |
-| **ADR-0002** | SQLite, транзакции, ограничения и история попыток | [Хранение](docs/adr/0002-sqlite-storage.md) |
-| **ADR-0003** | Разные вузы, источники расписания и ручные изменения | [Расписание](docs/adr/0003-schedule-adapters.md) |
-| **Модуль очереди** | Сущности, состояния, API и инструкция запуска | [Документация](docs/queue/README.md) |
+| **Песочница**: полный сценарий на вымышленных данных | `./start-sandbox` | Не нужны; Google/GitHub симулируются |
+| **Стенд**: настоящие публичные таблица и расписание | `./start-main` | Интернет; ключи не нужны; регистрация работ отключена |
+| **Собственный рабочий сервис**: регистрация, CI и очередь | [Настроить и запустить](docs/hackathon/suaios/queue/RUNBOOK.md#рабочий-сервис-на-своём-курсе) | Собственные GitHub-токен и Google service account |
 
-Исследование использует синтетических студентов. Его баллы и вероятности описывают модель; фактические результаты студентов приложение не прогнозирует.
+> [!TIP]
+> Для защиты проекта начни с `./start-sandbox`. Одна команда запускает оба сервера. Открой **http://localhost:8010/sandbox**, нажми «Войти», затем перейди в панель преподавателя или на страницу студента. Вход преподавателя: **sandbox / sandbox123** на **http://localhost:5180/admin**.
 
-## Карта проекта
+Порты, сброс, сохранение данных и пошаговые сценарии: [песочница](docs/hackathon/suaios/queue/SANDBOX.md). Запуск на публичных данных: [стенд](docs/hackathon/suaios/queue/LIVE_CHECK.md). `./start-main` не является запуском полноценной регистрации со своими ключами.
+
+## Как строится порядок
 
 ```text
-grading/defense_queue/        Правила, SQLite, допуск, расписание, сверка
-main.py                      HTTP API и подключение к проверке работ
-frontend/courses-front/      Интерфейсы студента и преподавателя
-research/queue-study/        Модели, исходные результаты и графики
-docs/adr/                    Архитектурные решения
-docs/queue/                  Устройство очереди, API и запуск
-scripts/run_queue_demo.py    Изолированная локальная демонстрация
+priority = max(−1, неделя дедлайна − неделя занятия)
+
+     −1                       0                    +1, +2, …
+Просроченные работы     Текущий дедлайн          Будущие сроки
+                    раньше → позже
 ```
+
+Первая готовая работа **после последней защищённой** определяет цель. Пустые ячейки пропускаются: `vv / пусто / v` и `v / vv / v` дают третью работу. Если готовой работы нет, студент получает предварительный приоритет следующей, но подтвердить приход сможет после допуска.
+
+При равных приоритетах сохраняется порядок первоначального состава занятия. В случайном режиме все студенты группы заранее получают сохранённый случайный ключ. Регистрация лабораторной не запускает жеребьёвку повторно. В режиме −1 завершившие все работы в новый список не включаются.
+
+```mermaid
+flowchart LR
+    A[Таблица группы] --> B[Выбор доступной работы]
+    B --> C[Предварительное место]
+    C --> D{Допуск и ответ «Приду»?}
+    D -->|Да| E[Состав занятия]
+    D -->|Нет| F[Не придёт]
+    E --> G[Вызов и результат]
+    G --> H[История в SQLite]
+    G -->|Не сдал, автоповтор включён| I[Повторный круг в конце]
+```
+
+До начала пары студент меняет посещение. Во время занятия и десять минут после него он видит текущую очередь; затем открывается следующее занятие. Преподаватель управляет попытками и отмечает неявку. [Все правила и кнопки](docs/hackathon/suaios/queue/ROUNDS.md).
+
+## Исследование и архитектура
+
+| Материал | Содержание |
+|---|---|
+| **[Исследование](research/queue-study/README.md)** | Восемь моделей, три финалиста, 10 000 прогонов, графики, чувствительность и экзаменационные сценарии |
+| **[ADR-0001 · Приоритет](docs/adr/0001-priority-policy.md)** | Основания выбора −1 и правила формирования списка |
+| **[ADR-0002 · SQLite](docs/adr/0002-sqlite-storage.md)** | Варианты хранения, транзакции, уникальность активной попытки и история |
+| **[ADR-0003 · Расписание](docs/adr/0003-schedule-adapters.md)** | Вузы, адаптеры, ручные занятия, переносы и отмена |
+| **[API](docs/hackathon/suaios/queue/API.md)** | Маршруты студента, преподавателя и настройки |
+| **[Проверки](docs/hackathon/suaios/queue/VERIFICATION.md)** | Команды, результаты, покрытые сценарии и границы проверки |
+
+Баллы исследования относятся к синтетической модели. Приложение организует порядок защиты; оно не прогнозирует оценки реальных студентов.
+
+## Карта репозитория
+
+| Путь | Что искать |
+|---|---|
+| [`grading/defense_queue/`](grading/defense_queue) | Правила очереди, синхронизация, SQLite, расписание и фоновая сверка |
+| [`main.py`](main.py) | HTTP API и подключение к существующей проверке работ |
+| [`frontend/courses-front/`](frontend/courses-front) | Интерфейсы студента и преподавателя, три языка |
+| [`courses/`](courses) | Конфигурации курсов и индекс |
+| [`research/queue-study/`](research/queue-study) | Модели, результаты и графики исследования |
+| [`tests/`](tests) | Проверки логики, хранения, HTTP и песочницы |
+| [`scripts/`](scripts) | Запуск, служебные команды и генерация графики |
+| [`docs/`](docs/README.md) | Полная навигация по инструкциям и справочникам |
 
 <details>
-<summary><strong>Проверки и техническая документация</strong></summary>
+<summary><strong>Воспроизвести проверки</strong></summary>
 
 ```bash
-python3 -m unittest discover -s tests -p 'test_defense_queue*.py'
-python3 docs/queue/test_schema.py
-cd frontend/courses-front
-npm test
-npm run build
+ADMIN_LOGIN=test ADMIN_PASSWORD=test SECRET_KEY=test GITHUB_TOKEN=dummy QUEUE_WORKER_ENABLED=0 .venv/bin/python -m pytest tests/ -q
+npm test --prefix frontend/courses-front
+npm run build --prefix frontend/courses-front
+./start-sandbox --check
+.venv/bin/python scripts/check_docs.py
 ```
 
-| Документ | Назначение |
-|---|---|
-| [DEVELOPMENT](docs/DEVELOPMENT.md) | Локальное окружение и собственные интеграции |
-| [RUNBOOK](docs/queue/RUNBOOK.md) | Демо, настройка очереди, хранение и восстановление |
-| [Аудит и готовность](docs/queue/AUDIT-2026-11-07.md) | Проверки, исправления и расхождения с требованиями |
-| [API](docs/queue/API.md) | Маршруты и форматы запросов очереди |
-| [COURSE CONFIG](docs/COURSE_CONFIG.md) | Конфигурация курса |
-| [DEPLOYMENT](docs/DEPLOYMENT.md) | Развёртывание сервиса |
-| [PROJECT DESCRIPTION](docs/PROJECT_DESCRIPTION.md) | Возможности исходного сервиса |
-| [CLAUDE.md](CLAUDE.md) | Соглашения проекта |
+Числа на верхней плашке относятся к локальному прогону от 08.11.2026. Отдельный бейдж GitHub Actions показывает состояние удалённого CI. [Подробный протокол](docs/hackathon/suaios/queue/VERIFICATION.md).
 
 </details>
 
@@ -162,7 +187,8 @@ npm run build
 
 <div align="center">
 
-**Lab Grader Web · модуль очереди защиты**<br>
-[Демо и запуск](docs/queue/RUNBOOK.md) · [Исследование](research/queue-study/README.md) · [ADR](docs/adr/README.md) · [Лицензия MIT](LICENSE)
+**Lab Grader Web · очередь защиты лабораторных**
+
+[Запуск](docs/hackathon/suaios/queue/RUNBOOK.md) · [Песочница](docs/hackathon/suaios/queue/SANDBOX.md) · [Документация](docs/README.md) · [Исследование](research/queue-study/README.md) · [MIT](LICENSE)
 
 </div>

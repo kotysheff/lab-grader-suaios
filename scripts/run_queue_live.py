@@ -151,7 +151,7 @@ def prepare(args):
     return directory, course, lessons
 
 
-def create_app(directory, course, lessons):
+def create_app(directory, course, lessons, frontend_port=5173):
     configs = directory/'courses'
     configs.mkdir(exist_ok=True)
     (configs/'live.yaml').write_text(json.dumps({'course': course}, ensure_ascii=False), encoding='utf-8')
@@ -179,12 +179,12 @@ def create_app(directory, course, lessons):
         return await call_next(request)
 
     print('\nВнешние источники: только чтение. Действия очереди сохраняются только в локальной SQLite.', flush=True)
-    print('Вход: http://localhost:5173/admin', flush=True)
+    print(f'Вход: http://localhost:{frontend_port}/admin', flush=True)
     print(f'Логин: local; пароль: {password}', flush=True)
-    print(f'Панель: http://localhost:5173/admin/courses/{COURSE_ID}/queue', flush=True)
+    print(f'Панель: http://localhost:{frontend_port}/admin/courses/{COURSE_ID}/queue', flush=True)
     group = GROUP_ID if GROUP_ID in groups else groups[0]
     first = course['queue'].get('required_labs_by_group', {}).get(group, course['queue']['required_labs'])[0]
-    print(f'Студент: http://localhost:5173/course/{COURSE_ID}/group/{group}/lab/{first}', flush=True)
+    print(f'Студент: http://localhost:{frontend_port}/course/{COURSE_ID}', flush=True)
     print(f'Данные и отчёт: {directory}\n', flush=True)
     return main.app
 

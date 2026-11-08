@@ -6,6 +6,24 @@ import sqlite3
 import threading
 
 
+def initialize_session(con, session_id, *, now):
+    """Allocate each group member a stable slot in this session's lottery."""
+    session = con.execute('SELECT * FROM sessions WHERE session_id=?', (session_id,)).fetchone()
+    if session is None:
+        return
+    members = con.execute('''SELECT student_id FROM queue_members WHERE course_id=? AND group_id=?
+        ORDER BY created_at,student_id''', (session['course_id'], session['group_id'])).fetchall()
+    ordinal = con.execute('SELECT coalesce(max(ordinal),0) FROM session_roster WHERE session_id=?',
+                          (session_id,)).fetchone()[0]
+    for member in members:
+        if con.execute('SELECT 1 FROM session_roster WHERE session_id=? AND student_id=?',
+                       (session_id, member['student_id'])).fetchone():
+            continue
+        ordinal += 1
+        con.execute('INSERT INTO session_roster VALUES (?,?,?,?,?)',
+                    (session_id, member['student_id'], secrets.SystemRandom().random(), ordinal, now))
+
+
 class QueueClosed(ValueError):
     pass
 
@@ -23,10 +41,10 @@ class QueueStore:
             con.execute("BEGIN IMMEDIATE")
             try:
                 version = con.execute("PRAGMA user_version").fetchone()[0]
-                if version > 6:
+                if version > 8:
                     raise ValueError("Версия базы очереди новее поддерживаемой")
                 migrations = Path(__file__).with_name("migrations")
-                for target in range(version + 1, 7):
+                for target in range(version + 1, 9):
                     path = next(migrations.glob(f"{target:03d}_*.sql"))
                     statement = ""
                     for line in path.read_text().splitlines(keepends=True):
@@ -122,6 +140,7 @@ class QueueStore:
                 local_date,timezone,opens_at,starts_at,ends_at,expires_at,created_at)
                 VALUES (?,?,?,?,?,'manual',?,?,?,?,?,?,?)""", (session_id, course_id, group_id, teacher_key,
                 session_id, local_date, course['timezone'], min(now, starts_at), starts_at, ends_at, ends_at, now))
+            initialize_session(con, session_id, now=now)
 
     def attendance(self, session_id, candidate_id, will_attend: bool, *, now):
         if type(will_attend) is not bool:

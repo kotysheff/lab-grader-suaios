@@ -1,4 +1,4 @@
--- Снимок схемы после миграций 001–006. Проверяется test_documented_schema_matches_migrations.
+-- Снимок схемы после миграций 001–008. Проверяется test_documented_schema_matches_migrations.
 
 CREATE TABLE courses (
     course_id TEXT PRIMARY KEY NOT NULL,
@@ -151,7 +151,7 @@ CREATE TABLE queue_entries (
     closed_at INTEGER,
     status TEXT NOT NULL DEFAULT 'waiting' CHECK (status IN
         ('waiting', 'called', 'defended', 'failed', 'no_show', 'withdrawn', 'expired')),
-    version INTEGER NOT NULL DEFAULT 1 CHECK (version >= 1),
+    version INTEGER NOT NULL DEFAULT 1 CHECK (version >= 1), voided_at INTEGER, rounds_managed INTEGER NOT NULL DEFAULT 0 CHECK(rounds_managed IN (0,1)),
     FOREIGN KEY (session_id, course_id, group_id, teacher_key)
         REFERENCES sessions(session_id, course_id, group_id, teacher_key),
     FOREIGN KEY (candidate_id, course_id, group_id, student_id)
@@ -206,7 +206,7 @@ CREATE TABLE queue_settings (
     random_override INTEGER NOT NULL DEFAULT 0 CHECK(random_override IN (0,1)),
     deadlines_json TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(deadlines_json)),
     updated_at INTEGER NOT NULL
-, schedule_json TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(schedule_json)), policy_override_set INTEGER NOT NULL DEFAULT 0 CHECK(policy_override_set IN (0,1)));
+, schedule_json TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(schedule_json)), policy_override_set INTEGER NOT NULL DEFAULT 0 CHECK(policy_override_set IN (0,1)), auto_repeat INTEGER NOT NULL DEFAULT 1 CHECK(auto_repeat IN (0,1)), undo_seconds INTEGER NOT NULL DEFAULT 5 CHECK(undo_seconds BETWEEN 1 AND 10));
 
 CREATE TABLE queue_reconciliations (
     session_id TEXT PRIMARY KEY REFERENCES sessions(session_id),
@@ -234,4 +234,46 @@ CREATE TABLE queue_commands (
  request_id TEXT NOT NULL,
  entry_id INTEGER REFERENCES queue_entries(entry_id),
  PRIMARY KEY(session_id, actor_key, request_id)
+);
+
+CREATE TABLE queue_undo (
+    command_id INTEGER PRIMARY KEY,
+    session_id TEXT NOT NULL REFERENCES sessions(session_id),
+    student_id INTEGER NOT NULL REFERENCES students(student_id),
+    actor TEXT NOT NULL,
+    request_id TEXT NOT NULL,
+    action TEXT NOT NULL,
+    before_json TEXT NOT NULL CHECK(json_valid(before_json)),
+    after_json TEXT NOT NULL CHECK(json_valid(after_json)),
+    expires_at REAL NOT NULL,
+    undone_at REAL,
+    UNIQUE(session_id,actor,request_id)
+);
+
+CREATE TABLE queue_members (
+    course_id TEXT NOT NULL,
+    group_id TEXT NOT NULL,
+    student_id INTEGER NOT NULL REFERENCES students(student_id),
+    full_name TEXT NOT NULL,
+    github_login TEXT,
+    admitted_lab_key TEXT,
+    target_lab_key TEXT,
+    target_order INTEGER,
+    deadline_at INTEGER,
+    deadline_available INTEGER NOT NULL CHECK(deadline_available IN (0,1)),
+    completed INTEGER NOT NULL CHECK(completed IN (0,1)),
+    queue_state TEXT NOT NULL CHECK(queue_state IN ('eligible','not_ready','not_attending')),
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY(course_id,group_id,student_id),
+    FOREIGN KEY(course_id,group_id) REFERENCES study_groups(course_id,group_id)
+);
+
+CREATE TABLE session_roster (
+    session_id TEXT NOT NULL REFERENCES sessions(session_id),
+    student_id INTEGER NOT NULL REFERENCES students(student_id),
+    random_key REAL NOT NULL CHECK(random_key>=0 AND random_key<1),
+    ordinal INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY(session_id,student_id)
 );

@@ -95,7 +95,7 @@ class StorageTests(unittest.TestCase):
         import sqlite3
         snapshot = sqlite3.connect(':memory:')
         try:
-            snapshot.executescript((root / 'docs/queue/schema.sql').read_text())
+            snapshot.executescript((root / 'docs/hackathon/suaios/queue/schema.sql').read_text())
             def objects(con):
                 return {tuple(row) for row in con.execute("SELECT type,name,sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%'")}
             with self.store.connection() as con:

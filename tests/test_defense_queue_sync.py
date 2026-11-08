@@ -47,10 +47,10 @@ class SyncTests(unittest.TestCase):
         self.assertEqual(self.rows()[0]['lab_key'], '1')
         self.assertEqual(self.grid[2][3], 'v')
 
-    def test_pending_earlier_lab_blocks_later(self):
+    def test_pending_earlier_lab_does_not_block_later(self):
         self.grid[2][3] = 'x'
         self.sync()
-        self.assertEqual(self.rows(), [])
+        self.assertEqual(self.rows()[0]['lab_key'], '2')
 
     def test_defense_advances_and_is_not_duplicated(self):
         self.sync()

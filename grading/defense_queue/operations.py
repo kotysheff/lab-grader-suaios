@@ -96,7 +96,7 @@ def teacher_view(store, course_id, group_id, course, *, deadlines_available, now
         raise ValueError('Занятие не найдено')
     materialize(store, view, course, now=now)
     with store.connection() as con:
-        attempts = [dict(row) for row in con.execute('SELECT * FROM queue_entries WHERE session_id=? ORDER BY entry_id', (session_id,))]
+        attempts = [dict(row) for row in con.execute('SELECT * FROM queue_entries WHERE session_id=? AND voided_at IS NULL ORDER BY entry_id', (session_id,))]
         events = [dict(row) for row in con.execute('SELECT e.*,s.full_name,c.lab_key FROM queue_events e LEFT JOIN queue_candidates c USING(candidate_id) LEFT JOIN students s ON s.student_id=c.student_id WHERE e.session_id=? ORDER BY e.event_id DESC LIMIT 200', (session_id,))]
         sync = con.execute('SELECT * FROM queue_reconciliations WHERE session_id=?', (session_id,)).fetchone()
         available_candidates = [dict(row) for row in con.execute("""SELECT c.candidate_id,c.lab_key,s.full_name FROM queue_candidates c JOIN students s USING(student_id)
@@ -106,19 +106,21 @@ def teacher_view(store, course_id, group_id, course, *, deadlines_available, now
     # A place belongs to a student; changing the admitted lab must not create a second row.
     with store.connection() as con:
         superseded = {row[0] for row in con.execute("SELECT entry_id FROM queue_events WHERE session_id=? AND kind='withdrawn' AND json_extract(details_json,'$.correction_of') IS NOT NULL", (session_id,))}
-    latest = {row['github_snapshot'].lower(): row for row in attempts if row['entry_id'] not in superseded}
-    current = {row['github'].lower(): dict(row) for row in view['entries']}
+    latest = {row['student_id']: row for row in attempts if row['entry_id'] not in superseded}
+    with store.connection() as con:
+        student_ids = {row['github_login'].lower(): row['student_id'] for row in con.execute('SELECT student_id,github_login FROM students')}
+    current = {(row.get('student_id') or student_ids[row['github'].lower()]): dict(row) for row in view['entries']}
     with store.connection() as con:
         for candidate in con.execute("""SELECT c.*,s.github_login,s.full_name FROM queue_candidates c
                 JOIN students s USING(student_id) WHERE c.course_id=? AND c.group_id=? AND c.status='eligible'""", (course_id, group_id)):
-            key = candidate['github_login'].lower()
+            key = candidate['student_id']
             if key not in latest:
                 continue
             base = current.get(key, {})
             if base.get('candidate_id') == candidate['candidate_id']:
                 continue
             current[key] = dict(base, candidate_id=candidate['candidate_id'], full_name=candidate['full_name'],
-                github=key, lab_key=candidate['lab_key'], qualified_at=candidate['qualified_at'],
+                student_id=key, github=candidate['github_login'], lab_key=candidate['lab_key'], qualified_at=candidate['qualified_at'],
                 deadline_at=candidate['deadline_at'], priority=None if view['mode'] == 'random' or candidate['deadline_at'] is None else priority_for(
                     datetime.fromtimestamp(candidate['deadline_at'], timezone.utc),
                     datetime.fromtimestamp(min(now, view['session']['starts_at']), timezone.utc),
@@ -130,10 +132,10 @@ def teacher_view(store, course_id, group_id, course, *, deadlines_available, now
         attempt = latest.get(key)
         row = current.get(key)
         if row is None:
-            row = dict(candidate_id=attempt['candidate_id'], full_name=attempt['full_name_snapshot'], github=key,
+            row = dict(candidate_id=attempt['candidate_id'], full_name=attempt['full_name_snapshot'], student_id=key, github=attempt['github_snapshot'],
                        lab_key=attempt['lab_key'], qualified_at=attempt['joined_at'], will_attend=True,
                        answered=True, position=None, state='attending')
-        last_result = next((item for item in reversed(attempts) if item['github_snapshot'].lower() == key
+        last_result = next((item for item in reversed(attempts) if item['student_id'] == key
                            and item['status'] in ('defended', 'failed', 'no_show')), None)
         # Only an attempt of this lab may supply its status and priority.
         matching = attempt if attempt and attempt['candidate_id'] == row['candidate_id'] else None
@@ -157,8 +159,8 @@ def teacher_view(store, course_id, group_id, course, *, deadlines_available, now
     waiting = [row for row in active if row['status'] == 'waiting']
     called = [row for row in active if row['status'] == 'called']
     active_order = {row['candidate_id']: index for index, row in enumerate(active)}
-    entries.sort(key=lambda row: (0, active_order[row['candidate_id']]) if row['candidate_id'] in active_order else (1, row['qualified_at']))
-    return dict(view, entries=entries, attempts=attempts, history=events, available_candidates=available_candidates,
+    entries.sort(key=lambda row: (0, active_order[row['candidate_id']]) if row['candidate_id'] in active_order else (1, row.get('roster_order', row['qualified_at'])))
+    result = dict(view, entries=entries, attempts=attempts, history=events, available_candidates=available_candidates,
                 service_ends_at=service_ends_at(view['session']),
                 service_open=view['session']['starts_at'] <= now < service_ends_at(view['session']) and view['session']['enrollment_status'] != 'cancelled',
                 current_entry_id=called[0]['entry_id'] if called else None,
@@ -167,6 +169,8 @@ def teacher_view(store, course_id, group_id, course, *, deadlines_available, now
                 stats={status: sum(row['status'] == status for row in attempts)
                        for status in ('waiting', 'called', 'defended', 'failed', 'no_show', 'withdrawn', 'expired')},
                 reconciliation=dict(sync) if sync else None)
+    from .rounds import decorate_view
+    return decorate_view(store, result, now=now)
 
 
 def call_next(store, session_id, *, now, actor, request_id=None):
@@ -192,7 +196,7 @@ def call_next(store, session_id, *, now, actor, request_id=None):
         return row['entry_id']
 
 
-def record_result(store, entry_id, outcome, *, now, actor):
+def record_result(store, entry_id, outcome, *, now, actor, auto_retry=True):
     if outcome not in ('defended', 'failed', 'no_show'):
         raise ValueError('Неизвестный результат')
     with store.transaction() as con:
@@ -201,7 +205,7 @@ def record_result(store, entry_id, outcome, *, now, actor):
             raise ValueError('Попытка не найдена')
         if row['status'] == outcome:
             return
-        if row['status'] != 'called':
+        if row['status'] != 'called' and not (outcome == 'no_show' and row['status'] == 'waiting'):
             raise QueueConflict('Можно отметить только текущего вызванного студента')
         session = con.execute('SELECT * FROM sessions WHERE session_id=?', (row['session_id'],)).fetchone()
         if now >= service_ends_at(session):
@@ -210,11 +214,12 @@ def record_result(store, entry_id, outcome, *, now, actor):
         _event(con, row['session_id'], outcome, now, actor=actor, entry_id=entry_id, candidate_id=row['candidate_id'])
         if outcome == 'defended':
             con.execute("UPDATE queue_candidates SET status='defended' WHERE candidate_id=?", (row['candidate_id'],))
-        elif outcome == 'failed':
+        elif outcome == 'failed' and auto_retry:
             session = con.execute('SELECT * FROM sessions WHERE session_id=?', (row['session_id'],)).fetchone()
             if now < session['ends_at']:
                 candidate = con.execute('SELECT * FROM queue_candidates WHERE candidate_id=?', (row['candidate_id'],)).fetchone()
-                _insert_attempt(con, candidate, session, request_key=f'retry:{entry_id}', repeat=True, now=now)
+                if candidate['status'] != 'inactive':
+                    _insert_attempt(con, candidate, session, request_key=f'retry:{entry_id}', repeat=True, now=now)
 
 
 def add_to_tail(store, session_id, candidate_id, *, now, actor):
@@ -358,7 +363,7 @@ def promote_next_labs(store, session_id, *, now, actor):
             return
         candidates=con.execute("""SELECT DISTINCT c.candidate_id FROM queue_candidates c
             JOIN queue_entries old ON old.student_id=c.student_id AND old.course_id=c.course_id
-            WHERE old.session_id=? AND old.status='defended' AND c.status='eligible'
+            WHERE old.session_id=? AND old.status='defended' AND old.rounds_managed=0 AND c.status='eligible'
             AND c.group_id=? AND c.lab_order>old.lab_order
             AND NOT EXISTS(SELECT 1 FROM queue_entries e WHERE e.session_id=? AND e.candidate_id=c.candidate_id)
             AND NOT EXISTS(SELECT 1 FROM queue_entries e WHERE e.course_id=c.course_id AND e.student_id=c.student_id AND e.status IN ('waiting','called'))

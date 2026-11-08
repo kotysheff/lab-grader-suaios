@@ -11,6 +11,8 @@ test("student matching is case insensitive", () => {
   const row = { github: "Login", candidate_id: 3 };
   assert.equal(ownEntry([row], " LOGIN "), row);
   assert.equal(ownEntry([row], "other"), undefined);
+  assert.equal(ownEntry([{ github: "", full_name: "Другой студент" }], ""), undefined);
+  assert.equal(ownEntry([{ github: "" }], "  "), undefined);
 });
 test("current, next and repeat states are distinct", () => {
   const row = { attempt: { entry_id: 2, status: "waiting", is_repeat: 1 } };

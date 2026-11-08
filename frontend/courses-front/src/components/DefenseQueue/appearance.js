@@ -11,7 +11,7 @@ export const queueAppearance = {
   "--queue-warning": colors.edit,
   "--queue-danger": colors.error,
   "--queue-info": colors.cancel,
-  "--queue-button-radius": sizes.borderRadius,
+  "--queue-button-radius": "var(--q-radius-sm)",
   "--queue-font-size": sizes.fontSizeMedium,
   "--queue-title-size": sizes.fontSizeLarge,
 };

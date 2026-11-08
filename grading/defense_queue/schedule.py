@@ -184,6 +184,8 @@ def import_sessions(store, course_id, group_id, course, lessons, *, now):
                 WHERE sessions.schedule_revision=1 AND sessions.starts_at>? AND sessions.enrollment_status!='cancelled' ''',
                 (sid,course_id,group_id,teacher,key,kind,datetime.fromtimestamp(start, ZoneInfo(zone)).date().isoformat(),
                  zone,min(now,start),start,end,end,now,now,now))
+            from .storage import initialize_session
+            initialize_session(con, sid, now=now)
     return len(prepared)
 
 

@@ -1,3 +1,5 @@
+[Главная](../../README.md) · [Навигация по документации](../../docs/README.md)
+
 <p align="center">
   <img src="../../docs/assets/readme/research.svg" width="1200" alt="Исследование очередей: сравнение моделей на синтетических данных">
 </p>
@@ -12,7 +14,7 @@
 
 [Все модели](#сравнение-восьми-моделей) · [Финалисты](#три-финалиста) · [Экзамен](#что-меняется-после-экзамена) · [ADR](../../docs/adr/README.md)
 
-[Главная](../../README.md) · [Запустить приложение](../../docs/queue/RUNBOOK.md) · [Исходные результаты](results/)
+[Главная](../../README.md) · [Запустить приложение](../../docs/hackathon/suaios/queue/RUNBOOK.md) · [Исходные результаты](results)
 
 </div>
 
@@ -28,7 +30,7 @@
 
 ## Набор моделей
 
-Исходники моделей и расчётного стенда находятся в [source/](source/). Для воспроизведения доступны [контрольные суммы файлов](original_source_hashes.json), параметры и сырые баллы.
+Исходники моделей и расчётного стенда находятся в [source/](source). Для воспроизведения доступны [контрольные суммы файлов](original_source_hashes.json), параметры и сырые баллы.
 
 | Модель | Правило |
 |---|---|
@@ -259,7 +261,7 @@ python3.12 -m venv .venv-research
 source .venv-research/bin/activate
 pip install -r research/queue-study/requirements.txt
 python research/queue-study/test_study.py
-python docs/queue/test_schema.py
+python docs/hackathon/suaios/queue/test_schema.py
 python research/queue-study/reproduce.py --runs 10000 --seed 42
 python research/queue-study/study.py --runs 10000 --seeds 42 1042 2042
 python research/queue-study/report.py

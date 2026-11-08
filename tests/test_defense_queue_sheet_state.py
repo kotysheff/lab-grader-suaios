@@ -29,8 +29,8 @@ class SheetStateTests(unittest.TestCase):
         for value in [None, '', 'x', '?', '?ошибка', 'v-3v-3', 'approved', 'vvv']:
             self.assertFalse(module.parse_lab_cell(value).admitted)
 
-    def test_required_order_cannot_be_skipped(self):
-        self.assertIsNone(module.first_admitted_lab(['1', '2'], {'1': 'x', '2': 'v'}))
+    def test_first_available_lab_skips_unready_gaps(self):
+        self.assertEqual(module.first_admitted_lab(['1', '2'], {'1': 'x', '2': 'v'}), '2')
         self.assertEqual(module.first_admitted_lab(['1', '2'], {'1': 'vv', '2': 'v'}), '2')
         self.assertEqual(module.first_admitted_lab(['1', '2'], {'1': 'v', '2': 'v'}, defended_in_history=frozenset({'1'})), '2')
 

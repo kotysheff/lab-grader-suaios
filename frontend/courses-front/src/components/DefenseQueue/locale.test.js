@@ -17,7 +17,7 @@ test("queue languages have identical keys and interpolation fields", () => {
 
 test("all literal queue UI copy has a translation", () => {
   const ru = read("ru");
-  for (const file of ["TeacherQueue.jsx", "StudentQueue.jsx", "../registration-form/index.jsx"]) {
+  for (const file of ["TeacherQueue.jsx", "StudentQueue.jsx", "RoundQueue.jsx", "../registration-form/index.jsx"]) {
     const source = fs.readFileSync(new URL(file, import.meta.url), "utf8");
     for (const match of source.matchAll(/\bq\(("(?:[^"\\]|\\.)*")/g)) {
       const key = JSON.parse(match[1]);
@@ -31,7 +31,7 @@ test("all help tooltips are translated", () => {
   const ru = read("ru");
   for (const file of ["TeacherQueue.jsx", "StudentQueue.jsx"]) {
     const source = fs.readFileSync(new URL(file, import.meta.url), "utf8");
-    for (const match of source.matchAll(/<Help text=("(?:[^"\\]|\\.)*")/g)) {
+    for (const match of source.matchAll(/<Hint(?: control)? text=("(?:[^"\\]|\\.)*")/g)) {
       const key = JSON.parse(match[1]);
       assert.ok(key in ru, key);
     }
