@@ -6,7 +6,6 @@ import json
 import os
 from pathlib import Path
 import secrets
-import subprocess
 import sys
 import tempfile
 import threading
@@ -32,7 +31,7 @@ def initial_state():
         'DEMO-02':[header,['№','ФИО','','ЛР1','ЛР2','ЛР3'],['1','Тестов Тест Тестович','demo-test','v','','']]}}
 
 
-def create_app(directory=None,frontend_port=5180):
+def create_app(directory=None,frontend_port=5180,reset=False):
     os.chdir(ROOT)
     sys.path.insert(0,str(ROOT))
     directory=Path(directory or ROOT/'data/queue-sandbox').resolve()
@@ -42,7 +41,8 @@ def create_app(directory=None,frontend_port=5180):
     config_dir=directory/'courses';config_dir.mkdir(exist_ok=True)
     state_path=directory/'state.json'
     lock=threading.RLock()
-    state=json.loads(state_path.read_text()) if state_path.exists() else initial_state()
+    state=json.loads(state_path.read_text()) if state_path.exists() and not reset else initial_state()
+    if reset:state['database']=f'queue-{secrets.token_hex(6)}.sqlite3'
     def save():
         with lock:
             temp=state_path.with_suffix('.tmp')
@@ -59,7 +59,7 @@ def create_app(directory=None,frontend_port=5180):
         'google':{'spreadsheet':'sandbox-only','info-sheet':'Информация','student-name-column':1,'lab-column-offset':2},
         'queue':{'enabled':True,'timezone':'Europe/Moscow','required_labs':['1','2','3'],'semester_week_anchor':'2026-08-31'},
         'labs':{str(i):{'short-name':f'ЛР{i}','github-prefix':f'sandbox-lab{i}','ignore-task-id':True,
-            'files':['solution.py','report.md'],'ci':{'jobs':['tests','report']}} for i in range(1,4)}}
+            'penalty-max':5,'penalty-strategy':'weekly','files':['solution.py','report.md'],'ci':{'jobs':['tests','report']}} for i in range(1,4)}}
     (config_dir/'sandbox.yaml').write_text(json.dumps({'course':course},ensure_ascii=False))
     (config_dir/'index.yaml').write_text(json.dumps({'version':'1.0','courses':[{'id':COURSE,'file':'sandbox.yaml','status':'active','priority':1000}]}))
     (config_dir/'logos').mkdir(exist_ok=True)
@@ -146,7 +146,7 @@ def create_app(directory=None,frontend_port=5180):
     @main.app.middleware('http')
     async def boundary(request,call_next):
         path=request.url.path
-        allowed=path in ('/courses','/admin/login','/admin/check-auth','/admin/queue/sessions','/sandbox','/sandbox/state','/sandbox/ci','/sandbox/start','/sandbox/finish','/sandbox/mark','/sandbox/reset')
+        allowed=path in ('/courses','/admin/login','/admin/check-auth','/admin/queue/sessions','/sandbox','/sandbox/state','/sandbox/ci','/sandbox/start','/sandbox/finish','/sandbox/reopen','/sandbox/mark','/sandbox/reset')
         allowed=allowed or path.startswith(f'/courses/{COURSE}') or path.startswith(f'/admin/courses/{COURSE}/queue') or (path.startswith(f'/admin/courses/{COURSE}/groups/') and '/queue' in path)
         if request.method!='OPTIONS' and not allowed:
             return JSONResponse(status_code=409,content={'detail':'Песочница изолирована от внешних курсов и сервисов'})
@@ -203,6 +203,14 @@ def create_app(directory=None,frontend_port=5180):
             con.execute('UPDATE queue_reconciliations SET due_at=? WHERE session_id=?',(now,session['session_id']))
         reconcile(store,session['session_id'],now=now,sync=lambda:sync(group))
         return {'status':'finished'}
+    @main.app.post('/sandbox/reopen')
+    def reopen(group:str=GROUP,admin=Depends(main.require_admin)):
+        store=queue_store();now=int(time.time())
+        with store.transaction() as con:
+            session=con.execute("SELECT * FROM sessions WHERE group_id=? AND starts_at<=? AND ends_at<=? AND enrollment_status!='cancelled' ORDER BY ends_at DESC LIMIT 1",(group,now,now)).fetchone()
+            if session is None:raise HTTPException(409,'Сначала завершите тестовое занятие')
+            con.execute('UPDATE sessions SET starts_at=min(starts_at,?),opens_at=min(opens_at,?),ends_at=?,expires_at=? WHERE session_id=?',(now-601,now-601,now-600,now-600,session['session_id']))
+        return {'status':'next_enrollment_open'}
     @main.app.post('/sandbox/reset')
     def reset(admin=Depends(main.require_admin)):
         nonlocal state
@@ -221,6 +229,7 @@ def main_cli():
     parser.add_argument('--port',type=int,default=8010)
     parser.add_argument('--frontend-port',type=int,default=5180)
     parser.add_argument('--backend-only',action='store_true')
+    parser.add_argument('--reset',action='store_true',help='Начать с чистой песочницы, сохранив старые базы')
     parser.add_argument('--check',action='store_true',help='Проверить API в процессе, без серверов и внешней сети')
     args=parser.parse_args()
     if args.check:
@@ -239,23 +248,16 @@ def main_cli():
                 assert len(result.json()['round_entries'])==3
                 print('Sandbox API OK: isolated sources, real HTTP handlers and SQLite, seeded roster.')
         return
-    app=create_app(frontend_port=args.frontend_port)
-    frontend=None
-    try:
-        if not args.backend_only:
-            env=dict(os.environ,VITE_API_BASE_URL=f'http://localhost:{args.port}',VITE_PROXY_TARGET=f'http://127.0.0.1:{args.port}')
-            frontend=subprocess.Popen(['npm','run','dev','--','--host','localhost','--port',str(args.frontend_port),'--strictPort'],cwd=ROOT/'frontend/courses-front',env=env)
-            time.sleep(1)
-            if frontend.poll() is not None:raise SystemExit('Frontend не запустился. Проверь свободный порт и npm-зависимости.')
+    from queue_dev_server import frontend_server,require_free_backend
+    try:require_free_backend(args.port)
+    except ValueError as error:raise SystemExit(str(error))
+    app=create_app(frontend_port=args.frontend_port,reset=args.reset)
+    with frontend_server(ROOT,backend_port=args.port,frontend_port=args.frontend_port,enabled=not args.backend_only):
         print(f'\nПЕСОЧНИЦА: Google/GitHub симулируются. Панель управления: http://localhost:{args.port}/sandbox',flush=True)
+        print(f'Студент: http://localhost:{args.frontend_port}/course/{COURSE} — выбор группы, затем лабораторной',flush=True)
         print(f'Вход преподавателя: http://localhost:{args.frontend_port}/admin — sandbox / sandbox123',flush=True)
         import uvicorn
         uvicorn.run(app,host='127.0.0.1',port=args.port)
-    finally:
-        if frontend and frontend.poll() is None:
-            frontend.terminate()
-            try:frontend.wait(timeout=5)
-            except subprocess.TimeoutExpired:frontend.kill()
 
 
 if __name__=='__main__':main_cli()

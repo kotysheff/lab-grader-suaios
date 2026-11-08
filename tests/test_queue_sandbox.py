@@ -28,13 +28,13 @@ with tempfile.TemporaryDirectory(prefix='sandbox-test-',dir='data') as directory
         path='/courses/queue-sandbox/groups/DEMO-01'
         reg=client.post(path+'/register',json=student)
         assert reg.status_code==200,reg.text
-        for scenario,status,mark in [('pending','pending',''),('failure','updated','x'),('success','updated','v')]:
+        for scenario,status,mark in [('pending','pending',''),('failure','updated','x'),('success','updated','v-2')]:
             assert client.post('/sandbox/ci',json={'login':'demo-new','value':scenario}).status_code==200
             result=client.post(path+'/labs/1/grade',json={'github':'demo-new'})
             assert result.status_code==200,result.text
             assert result.json()['status']==status,result.text
             state=client.get('/sandbox/state').json()
-            assert (state['grids']['DEMO-01'][-1][3].startswith(mark) if mark else state['grids']['DEMO-01'][-1][3]==''),state
+            assert state['grids']['DEMO-01'][-1][3]==mark,state
         session=client.get(path+'/queue').json()['session']['session_id']
         assert client.post(path+'/queue/attendance',json=dict(student,session_id=session,will_attend=True)).status_code==200
         assert client.post('/sandbox/start').status_code==200
@@ -65,6 +65,9 @@ with tempfile.TemporaryDirectory(prefix='sandbox-test-',dir='data') as directory
         assert client.put('/admin/courses/queue-sandbox/queue/preferences',json={'auto_repeat':False,'undo_seconds':10}).status_code==200
         assert client.post('/sandbox/mark',json={'login':'demo-anna','lab':1,'value':'vv'}).status_code==200
         assert client.post('/sandbox/finish').status_code==200
+        assert client.get(path+'/queue').json()['read_only'] is True
+        assert client.post('/sandbox/reopen').status_code==200
+        assert client.get(path+'/queue').json()['read_only'] is False
         old_database=str(queue_store().path)
         assert client.post('/sandbox/reset').status_code==200
         assert str(queue_store().path)!=old_database
