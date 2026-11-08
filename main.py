@@ -2908,10 +2908,15 @@ async def upload_course(request: Request, file: UploadFile = File(...), admin: s
     The course will be added with status='active', priority=0 by default
     The ID will be generated from filename (e.g., 'os-2025.yaml' -> 'os-2025')
     """
-    if not file.filename.endswith(".yaml") and not file.filename.endswith(".yml"):
+    filename = file.filename or ""
+    if not filename or any(char in filename for char in ("/", "\\", "\x00", ":")):
+        raise HTTPException(status_code=400, detail="Укажите только имя файла без пути")
+    if not filename.endswith(".yaml") and not filename.endswith(".yml"):
         raise HTTPException(status_code=400, detail="Только YAML файлы разрешены")
 
-    file_location = os.path.join(COURSES_DIR, file.filename)
+    file_location = os.path.join(COURSES_DIR, filename)
+    if os.path.dirname(os.path.realpath(file_location)) != os.path.realpath(COURSES_DIR):
+        raise HTTPException(status_code=400, detail="Файл должен находиться в папке курсов")
 
     if os.path.exists(file_location):
         raise HTTPException(status_code=400, detail="Файл с таким именем уже существует")
@@ -2927,8 +2932,11 @@ async def upload_course(request: Request, file: UploadFile = File(...), admin: s
         raise HTTPException(status_code=400, detail="Некорректная структура курса: отсутствует ключ 'course'")
 
     # Save course file
-    with open(file_location, "wb") as f:
-        f.write(content)
+    try:
+        with open(file_location, "xb") as f:
+            f.write(content)
+    except FileExistsError:
+        raise HTTPException(status_code=400, detail="Файл с таким именем уже существует")
 
     # Generate course ID from filename (e.g., 'operating-systems-2025.yaml' -> 'operating-systems-2025')
     course_id = file.filename.replace(".yaml", "").replace(".yml", "")
