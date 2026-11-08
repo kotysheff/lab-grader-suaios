@@ -25,7 +25,8 @@ def test_entire_defense_journey(queue_client,monkeypatch,tmp_path,run):
     monkeypatch.setattr(time,'time',lambda:now+3601)
     authenticate(client)
     assert client.post(public+'/attendance',json=dict(student,will_attend=False)).status_code==409
-    assert client.get(public).json()['session']['session_id']=='next'
+    assert client.get(public).json()['session']['session_id']=='future'
+    assert client.get(public).json()['read_only'] is True
     called=client.post(admin+'/actions',json={'session_id':'future','action':'call_next'})
     assert called.status_code==200,called.text
     eid=called.json()['current_entry_id']

@@ -1255,17 +1255,17 @@ def _after_grade_queue_sync(course_id, group_id, course, target):
 @limiter.limit('600/minute')
 def get_defense_queue(request: Request, course_id: str, group_id: str, session_id: str | None = None, preview_lab: str | None = None):
     import time
-    from grading.defense_queue.runtime import queue_view
+    from grading.defense_queue.student_view import student_view
     course = get_course_by_id(course_id)
     if not course.get('queue', {}).get('enabled', False):
         raise HTTPException(status_code=404, detail='Очередь для курса не включена')
     try:
         store, summary = _sync_defense_queue(course_id, group_id, course)
-        result = queue_view(store, course_id, group_id, course,
+        result = student_view(store, course_id, group_id, course,
                             deadlines_available=summary['deadlines_available'],
                             now=int(time.time()), session_id=session_id)
         result['stale'] = summary.get('stale', False)
-        if preview_lab and result.get('session') and result['mode'] == 'priority':
+        if preview_lab and not result.get('read_only') and result.get('session') and result['mode'] == 'priority':
             resolved = find_visible_lab_config(course, preview_lab)
             if resolved:
                 from grading.defense_queue.policy import priority_for
@@ -1303,6 +1303,9 @@ def set_queue_attendance(request: Request, course_id: str, group_id: str, data: 
         store, summary = _sync_defense_queue(course_id, group_id, course)
         if summary.get('stale'):
             raise HTTPException(status_code=503, detail='Допуск не удалось обновить. Повторите позже')
+        from grading.defense_queue.student_view import current_session
+        if current_session(store,course_id,group_id,now=int(time.time())):
+            raise HTTPException(status_code=409,detail='Запись на следующее занятие откроется через 10 минут после окончания текущего')
         full_name = f'{data.surname} {data.name} {data.patronymic}'.strip()
         with store.connection() as con:
             candidate = con.execute("""SELECT c.candidate_id,s.full_name FROM queue_candidates c

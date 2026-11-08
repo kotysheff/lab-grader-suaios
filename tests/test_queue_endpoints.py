@@ -72,7 +72,8 @@ def test_freeze_and_teacher_result(queue_client):
     path='/courses/c/groups/g/queue'
     body={'surname':'Фамилия','name':'Имя','patronymic':'Отчество','github':'login','session_id':'current','will_attend':False}
     assert client.post(path+'/attendance',json=body).status_code==409
-    assert client.get(path).json()['session']['session_id']=='future'
+    assert client.get(path).json()['session']['session_id']=='current'
+    assert client.get(path).json()['read_only'] is True
     authenticate(client)
     admin='/admin/courses/c/groups/g/queue'
     view=client.post(admin+'/actions',json={'session_id':'current','action':'call_next'})
@@ -339,3 +340,25 @@ def test_correct_result_http_keeps_single_row_and_retracts_followup(queue_client
     assert corrected['stats']['defended']==0
     assert corrected['stats']['failed']==1
     assert any(e['kind']=='result_corrected' and e['outcome']=='failed' and e['previous_outcome']=='defended' for e in corrected['history'])
+
+
+def test_next_attendance_blocked_until_end_plus_ten_minutes(queue_client,monkeypatch):
+    client,store,_,now=queue_client
+    with store.connection() as con:
+        candidate=con.execute("SELECT candidate_id FROM queue_candidates WHERE status='eligible'").fetchone()[0]
+    store.create_session('today','c','g','teacher',starts_at=now-10,ends_at=now+100,local_date='2026-11-08',now=now-100)
+    store.attendance('today',candidate,True,now=now-20)
+    public='/courses/c/groups/g/queue'
+    identity={'surname':'Фамилия','name':'Имя','patronymic':'Отчество','github':'login','session_id':'future','will_attend':True}
+    for instant in (now,now+100,now+699):
+        monkeypatch.setattr(time,'time',lambda instant=instant:instant)
+        view=client.get(public).json()
+        assert view['read_only'] and not view['attendance_open']
+        assert view['session']['session_id']=='today'
+        assert 'student_catalog' not in view
+        assert client.post(public+'/attendance',json=identity).status_code==409
+    monkeypatch.setattr(time,'time',lambda:now+700)
+    view=client.get(public).json()
+    assert not view['read_only'] and view['attendance_open']
+    assert view['session']['session_id']=='future'
+    assert client.post(public+'/attendance',json=identity).status_code==200
