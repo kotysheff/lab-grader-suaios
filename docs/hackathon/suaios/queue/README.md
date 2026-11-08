@@ -1,7 +1,7 @@
-[Главная](../../README.md) · [Навигация по документации](../README.md)
+[Главная](../../../../README.md) · [Навигация по документации](../../../README.md)
 
 <p align="center">
-  <img src="../assets/readme/queue.svg" width="1200" alt="Модуль очереди: допуск, посещение и попытка защиты">
+  <img src="../../../assets/readme/queue.svg" width="1200" alt="Модуль очереди: допуск, посещение и попытка защиты">
 </p>
 
 <div align="center">
@@ -10,14 +10,14 @@
 
 **Как сервер формирует состав занятия и сохраняет результаты**
 
-[Демо и запуск](RUNBOOK.md) · [API](API.md) · [Термины](GLOSSARY.md) · [Главная](../../README.md)
+[Демо и запуск](RUNBOOK.md) · [API](API.md) · [Термины](GLOSSARY.md) · [Главная](../../../../README.md)
 
 </div>
 
 > [!TIP]
 > Начать знакомство можно с [изолированного демо](SANDBOX.md). Текущая и следующая пары, допуски и участники уже подготовлены.
 
-[SQLite ADR](../adr/0002-sqlite-storage.md) · [Алгоритм](../adr/0001-priority-policy.md) · [Расписание](../adr/0003-schedule-adapters.md) · [Термины](GLOSSARY.md)
+[SQLite ADR](../../../adr/0002-sqlite-storage.md) · [Алгоритм](../../../adr/0001-priority-policy.md) · [Расписание](../../../adr/0003-schedule-adapters.md) · [Термины](GLOSSARY.md)
 
 Реализация находится в `grading/defense_queue/`, HTTP-маршруты в `main.py`, интерфейсы в `frontend/courses-front/src/components/DefenseQueue/`.
 
@@ -110,7 +110,7 @@ stateDiagram-v2
 ## Проверка
 
 ```bash
-python3 docs/queue/test_schema.py
+python3 docs/hackathon/suaios/queue/test_schema.py
 ```
 
 Тесты используют временные SQLite-базы. Проверяются перезапуск, одновременная запись, отсутствие дублей, несколько одновременных защит с независимыми результатами, посещение в обе стороны до фиксации, запрет после фиксации, сохранение состава при переносе, постоянный участник после завершения попытки и история допуска до назначения занятия.
@@ -119,4 +119,4 @@ python3 docs/queue/test_schema.py
 
 ---
 
-[← Главная](../../README.md) · [Демо и запуск](RUNBOOK.md) · [Архитектурные решения](../adr/README.md) · [Исследование](../../research/queue-study/README.md)
+[← Главная](../../../../README.md) · [Демо и запуск](RUNBOOK.md) · [Архитектурные решения](../../../adr/README.md) · [Исследование](../../../../research/queue-study/README.md)

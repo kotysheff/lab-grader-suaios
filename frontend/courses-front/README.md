@@ -2,7 +2,7 @@
 
 # Интерфейс Lab Grader
 
-[Главная](../../README.md) · [Документация](../../docs/README.md) · [Рабочий запуск](../../docs/queue/RUNBOOK.md) · [Песочница](../../docs/queue/SANDBOX.md)
+[Главная](../../README.md) · [Документация](../../docs/README.md) · [Рабочий запуск](../../docs/hackathon/suaios/queue/RUNBOOK.md) · [Песочница](../../docs/hackathon/suaios/queue/SANDBOX.md)
 
 React 19, Vite, существующие формы регистрации и административная панель. Компоненты очереди находятся в `src/components/DefenseQueue/`, переводы — в `src/locales/{ru,en,zh}/queue.json`.
 
@@ -34,4 +34,4 @@ npm test
 npm run build
 ```
 
-Результат сборки находится в `dist/`. Production-контейнер использует [frontend.Dockerfile](../../frontend.Dockerfile). В README корня опубликован [протокол проверок](../../docs/queue/VERIFICATION.md).
+Результат сборки находится в `dist/`. Production-контейнер использует [frontend.Dockerfile](../../frontend.Dockerfile). В README корня опубликован [протокол проверок](../../docs/hackathon/suaios/queue/VERIFICATION.md).

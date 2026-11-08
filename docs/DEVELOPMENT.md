@@ -135,7 +135,7 @@ GITHUB_OAUTH_CLIENT_SECRET=...
 FRONTEND_URL=http://localhost:8080   # или http://localhost:5173 для npm run dev
 ```
 
-Для запуска очереди, полного сценария без ключей и стенда на публичных данных: [RUNBOOK](queue/RUNBOOK.md).
+Для запуска очереди, полного сценария без ключей и стенда на публичных данных: [RUNBOOK](hackathon/suaios/queue/RUNBOOK.md).
 
 ## 6. Запуск
 

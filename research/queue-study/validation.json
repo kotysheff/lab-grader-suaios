@@ -13,7 +13,7 @@
       "output": ".........\n----------------------------------------------------------------------\nRan 9 tests in 0.089s\n\nOK"
     },
     {
-      "test": "docs/queue/test_schema.py",
+      "test": "docs/hackathon/suaios/queue/test_schema.py",
       "output": "..................\n----------------------------------------------------------------------\nRan 18 tests in 0.134s\n\nOK"
     }
   ],

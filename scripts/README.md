@@ -2,7 +2,7 @@
 
 # Скрипты
 
-[Главная](../README.md) · [Документация](../docs/README.md) · [Запуск](../docs/queue/RUNBOOK.md)
+[Главная](../README.md) · [Документация](../docs/README.md) · [Запуск](../docs/hackathon/suaios/queue/RUNBOOK.md)
 
 Команды ниже выполняются из корня репозитория.
 
@@ -23,7 +23,7 @@
 ./start-main --port 8001 --frontend-port 5174
 ```
 
-`--backend-only` отключает запуск Vite. `--reset` используется только для осознанного сброса локального профиля после остановки прежнего backend. Подробности сохранения: [песочница](../docs/queue/SANDBOX.md) и [стенд](../docs/queue/LIVE_CHECK.md).
+`--backend-only` отключает запуск Vite. `--reset` используется только для осознанного сброса локального профиля после остановки прежнего backend. Подробности сохранения: [песочница](../docs/hackathon/suaios/queue/SANDBOX.md) и [стенд](../docs/hackathon/suaios/queue/LIVE_CHECK.md).
 
 ## Снимки для README
 

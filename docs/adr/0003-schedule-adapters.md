@@ -39,7 +39,7 @@ Meeting(
 
 Рабочий формат конфигурации, включая несколько групп, отмены, переносы и дополнительные занятия: [COURSE_CONFIG.md](../COURSE_CONFIG.md#расписание-очереди-и-поправки-курса). Источники подключаются модулями в `grading/defense_queue/schedule_sources/`; `source` выбирает имя модуля.
 
-Полный ADR по обязательному шаблону: [ADR-02 расписания](../hackathon/lab-grader-queue/ADR-02-schedule.md).
+Полный ADR по обязательному шаблону: [ADR-02 расписания](../hackathon/suaios/ADR-02-schedule.md).
 
 ## Ручные изменения
 

@@ -9,14 +9,14 @@
 **От успешной проверки работы до защиты на занятии.**
 
 <p>
-  <a href="docs/queue/VERIFICATION.md"><img src="docs/assets/readme/checks.svg" alt="Результаты локальных проверок от 08.11.2026"></a>
+  <a href="docs/hackathon/suaios/queue/VERIFICATION.md"><img src="docs/assets/readme/checks.svg" alt="Результаты локальных проверок от 08.11.2026"></a>
 </p>
 <p>
   <a href="https://github.com/kotysheff/lab-grader-queue/actions/workflows/tests.yml"><img src="https://github.com/kotysheff/lab-grader-queue/actions/workflows/tests.yml/badge.svg" alt="GitHub Actions · Tests"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-334155?style=flat-square" alt="MIT"></a>
 </p>
 
-[Демонстрация](#демонстрация) · [Посмотреть за 5 минут](docs/queue/SANDBOX.md) · [Рабочий запуск](docs/queue/RUNBOOK.md) · [Исследование](research/queue-study/README.md) · [ADR](docs/adr/README.md) · [Вся документация](docs/README.md)
+[Демонстрация](#демонстрация) · [Посмотреть за 5 минут](docs/hackathon/suaios/queue/SANDBOX.md) · [Рабочий запуск](docs/hackathon/suaios/queue/RUNBOOK.md) · [Исследование](research/queue-study/README.md) · [ADR](docs/adr/README.md) · [Вся документация](docs/README.md)
 
 <img src="docs/assets/readme/stack.svg" width="680" alt="FastAPI · React и Vite · SQLite · приоритет от −1">
 
@@ -37,7 +37,7 @@
 
 **Допуск → подтверждение прихода → защита → повторный круг → расписание**
 
-[▶ MP4 со звуком · 1080p / 60 fps](docs/assets/demo/presentation.mp4) · [Открыть GIF](docs/assets/demo/presentation.gif) · [Запустить песочницу](docs/queue/SANDBOX.md)
+[▶ MP4 со звуком · 1080p / 60 fps](docs/assets/demo/presentation.mp4) · [Открыть GIF](docs/assets/demo/presentation.gif) · [Запустить песочницу](docs/hackathon/suaios/queue/SANDBOX.md)
 
 </div>
 
@@ -69,8 +69,8 @@ GIF показывает весь 50-секундный сценарий без 
 
 <table>
 <tr>
-<td width="33%" valign="top"><strong>01 / Студент</strong><br><br>Вся очередь группы, собственное место и ответ «Приду / не приду». Во время занятия — текущий порядок и результаты без управляющих кнопок.<br><br><a href="docs/queue/RUNBOOK.md#студент">Открыть сценарий →</a></td>
-<td width="33%" valign="top"><strong>02 / Преподаватель</strong><br><br>Вызов нескольких студентов, результаты защиты, повторные круги, отмена ошибочного действия, статистика и история.<br><br><a href="docs/queue/ROUNDS.md">Кнопки и состояния →</a></td>
+<td width="33%" valign="top"><strong>01 / Студент</strong><br><br>Вся очередь группы, собственное место и ответ «Приду / не приду». Во время занятия — текущий порядок и результаты без управляющих кнопок.<br><br><a href="docs/hackathon/suaios/queue/RUNBOOK.md#студент">Открыть сценарий →</a></td>
+<td width="33%" valign="top"><strong>02 / Преподаватель</strong><br><br>Вызов нескольких студентов, результаты защиты, повторные круги, отмена ошибочного действия, статистика и история.<br><br><a href="docs/hackathon/suaios/queue/ROUNDS.md">Кнопки и состояния →</a></td>
 <td width="33%" valign="top"><strong>03 / Расписание</strong><br><br>ГУАП, ручные занятия и JSON-импорт для других вузов. Переносы, отмена и восстановление занятий; отдельные списки групп.<br><br><a href="docs/adr/0003-schedule-adapters.md">Устройство расписания →</a></td>
 </tr>
 </table>
@@ -80,11 +80,11 @@ GIF показывает весь 50-секундный сценарий без 
 
 ## Преподавателю: маршрут просмотра
 
-1. **Запустить [песочницу](docs/queue/SANDBOX.md)** и пройти регистрацию студента, вызов, результат и повторную попытку.
+1. **Запустить [песочницу](docs/hackathon/suaios/queue/SANDBOX.md)** и пройти регистрацию студента, вызов, результат и повторную попытку.
 2. Открыть **[исследование с графиками](research/queue-study/README.md)**: все модели, три финалиста и основания выбора −1.
-3. Прочитать **[архитектурные решения](docs/adr/README.md)**. Версии по шаблону задания находятся [в пакете ADR](docs/hackathon/lab-grader-queue/README.md).
-4. Посмотреть **[подтверждённые проверки и отличия от задания](docs/queue/VERIFICATION.md)**.
-5. Для собственного курса перейти к **[рабочему запуску](docs/queue/RUNBOOK.md)**.
+3. Прочитать **[архитектурные решения](docs/adr/README.md)**. Версии по шаблону задания находятся [в пакете ADR](docs/hackathon/suaios/README.md).
+4. Посмотреть **[подтверждённые проверки и отличия от задания](docs/hackathon/suaios/queue/VERIFICATION.md)**.
+5. Для собственного курса перейти к **[рабочему запуску](docs/hackathon/suaios/queue/RUNBOOK.md)**.
 
 ## Запуск без Docker
 
@@ -107,12 +107,12 @@ npm ci --prefix frontend/courses-front --legacy-peer-deps
 |---|---|---|
 | **Песочница**: полный сценарий на вымышленных данных | `./start-sandbox` | Не нужны; Google/GitHub симулируются |
 | **Стенд**: настоящие публичные таблица и расписание | `./start-main` | Интернет; ключи не нужны; регистрация работ отключена |
-| **Собственный рабочий сервис**: регистрация, CI и очередь | [Настроить и запустить](docs/queue/RUNBOOK.md#рабочий-сервис-на-своём-курсе) | Собственные GitHub-токен и Google service account |
+| **Собственный рабочий сервис**: регистрация, CI и очередь | [Настроить и запустить](docs/hackathon/suaios/queue/RUNBOOK.md#рабочий-сервис-на-своём-курсе) | Собственные GitHub-токен и Google service account |
 
 > [!TIP]
 > Для защиты проекта начни с `./start-sandbox`. Одна команда запускает оба сервера. Открой **http://localhost:8010/sandbox**, нажми «Войти», затем перейди в панель преподавателя или на страницу студента. Вход преподавателя: **sandbox / sandbox123** на **http://localhost:5180/admin**.
 
-Порты, сброс, сохранение данных и пошаговые сценарии: [песочница](docs/queue/SANDBOX.md). Запуск на публичных данных: [стенд](docs/queue/LIVE_CHECK.md). `./start-main` не является запуском полноценной регистрации со своими ключами.
+Порты, сброс, сохранение данных и пошаговые сценарии: [песочница](docs/hackathon/suaios/queue/SANDBOX.md). Запуск на публичных данных: [стенд](docs/hackathon/suaios/queue/LIVE_CHECK.md). `./start-main` не является запуском полноценной регистрации со своими ключами.
 
 ## Как строится порядок
 
@@ -140,7 +140,7 @@ flowchart LR
     G -->|Не сдал, автоповтор включён| I[Повторный круг в конце]
 ```
 
-До начала пары студент меняет посещение. Во время занятия и десять минут после него он видит текущую очередь; затем открывается следующее занятие. Преподаватель управляет попытками и отмечает неявку. [Все правила и кнопки](docs/queue/ROUNDS.md).
+До начала пары студент меняет посещение. Во время занятия и десять минут после него он видит текущую очередь; затем открывается следующее занятие. Преподаватель управляет попытками и отмечает неявку. [Все правила и кнопки](docs/hackathon/suaios/queue/ROUNDS.md).
 
 ## Исследование и архитектура
 
@@ -150,8 +150,8 @@ flowchart LR
 | **[ADR-0001 · Приоритет](docs/adr/0001-priority-policy.md)** | Основания выбора −1 и правила формирования списка |
 | **[ADR-0002 · SQLite](docs/adr/0002-sqlite-storage.md)** | Варианты хранения, транзакции, уникальность активной попытки и история |
 | **[ADR-0003 · Расписание](docs/adr/0003-schedule-adapters.md)** | Вузы, адаптеры, ручные занятия, переносы и отмена |
-| **[API](docs/queue/API.md)** | Маршруты студента, преподавателя и настройки |
-| **[Проверки](docs/queue/VERIFICATION.md)** | Команды, результаты, покрытые сценарии и границы проверки |
+| **[API](docs/hackathon/suaios/queue/API.md)** | Маршруты студента, преподавателя и настройки |
+| **[Проверки](docs/hackathon/suaios/queue/VERIFICATION.md)** | Команды, результаты, покрытые сценарии и границы проверки |
 
 Баллы исследования относятся к синтетической модели. Приложение организует порядок защиты; оно не прогнозирует оценки реальных студентов.
 
@@ -159,13 +159,13 @@ flowchart LR
 
 | Путь | Что искать |
 |---|---|
-| [`grading/defense_queue/`](grading/defense_queue/) | Правила очереди, синхронизация, SQLite, расписание и фоновая сверка |
+| [`grading/defense_queue/`](grading/defense_queue) | Правила очереди, синхронизация, SQLite, расписание и фоновая сверка |
 | [`main.py`](main.py) | HTTP API и подключение к существующей проверке работ |
-| [`frontend/courses-front/`](frontend/courses-front/) | Интерфейсы студента и преподавателя, три языка |
-| [`courses/`](courses/) | Конфигурации курсов и индекс |
-| [`research/queue-study/`](research/queue-study/) | Модели, результаты и графики исследования |
-| [`tests/`](tests/) | Проверки логики, хранения, HTTP и песочницы |
-| [`scripts/`](scripts/) | Запуск, служебные команды и генерация графики |
+| [`frontend/courses-front/`](frontend/courses-front) | Интерфейсы студента и преподавателя, три языка |
+| [`courses/`](courses) | Конфигурации курсов и индекс |
+| [`research/queue-study/`](research/queue-study) | Модели, результаты и графики исследования |
+| [`tests/`](tests) | Проверки логики, хранения, HTTP и песочницы |
+| [`scripts/`](scripts) | Запуск, служебные команды и генерация графики |
 | [`docs/`](docs/README.md) | Полная навигация по инструкциям и справочникам |
 
 <details>
@@ -179,7 +179,7 @@ npm run build --prefix frontend/courses-front
 .venv/bin/python scripts/check_docs.py
 ```
 
-Числа на верхней плашке относятся к локальному прогону от 08.11.2026. Отдельный бейдж GitHub Actions показывает состояние удалённого CI. [Подробный протокол](docs/queue/VERIFICATION.md).
+Числа на верхней плашке относятся к локальному прогону от 08.11.2026. Отдельный бейдж GitHub Actions показывает состояние удалённого CI. [Подробный протокол](docs/hackathon/suaios/queue/VERIFICATION.md).
 
 </details>
 
@@ -189,6 +189,6 @@ npm run build --prefix frontend/courses-front
 
 **Lab Grader Web · очередь защиты лабораторных**
 
-[Запуск](docs/queue/RUNBOOK.md) · [Песочница](docs/queue/SANDBOX.md) · [Документация](docs/README.md) · [Исследование](research/queue-study/README.md) · [MIT](LICENSE)
+[Запуск](docs/hackathon/suaios/queue/RUNBOOK.md) · [Песочница](docs/hackathon/suaios/queue/SANDBOX.md) · [Документация](docs/README.md) · [Исследование](research/queue-study/README.md) · [MIT](LICENSE)
 
 </div>
