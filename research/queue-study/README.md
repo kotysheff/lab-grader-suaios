@@ -1,3 +1,5 @@
+[Главная](../../README.md) · [Навигация по документации](../../docs/README.md)
+
 <p align="center">
   <img src="../../docs/assets/readme/research.svg" width="1200" alt="Исследование очередей: сравнение моделей на синтетических данных">
 </p>

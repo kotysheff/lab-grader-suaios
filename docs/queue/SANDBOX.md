@@ -1,3 +1,5 @@
+[Главная](../../README.md) · [Навигация по документации](../README.md)
+
 # Полная локальная песочница
 
 Проверка интерфейса и логики без Docker, ключей и внешней сети. HTTP-обработчики регистрации, проверки работы, очереди и SQLite настоящие. Ответы Google Sheets, существование пользователей GitHub и результаты CI симулируются. Это не проверка доступов к настоящим сервисам.
@@ -26,7 +28,11 @@
 .venv/bin/python scripts/run_queue_sandbox.py --backend-only
 ```
 
-Во втором случае frontend запускается отдельно с `VITE_API_BASE_URL=http://localhost:8010`.
+Во втором случае frontend запускается отдельно из корня репозитория. Оба адреса должны указывать на backend песочницы:
+
+```bash
+VITE_API_BASE_URL=http://localhost:8010 VITE_PROXY_TARGET=http://127.0.0.1:8010 npm --prefix frontend/courses-front run dev -- --host localhost --port 5180 --strictPort
+```
 
 ## Студенты
 
