@@ -243,7 +243,7 @@ def main_cli():
     frontend=None
     try:
         if not args.backend_only:
-            env=dict(os.environ,VITE_API_BASE_URL=f'http://localhost:{args.port}')
+            env=dict(os.environ,VITE_API_BASE_URL=f'http://localhost:{args.port}',VITE_PROXY_TARGET=f'http://127.0.0.1:{args.port}')
             frontend=subprocess.Popen(['npm','run','dev','--','--host','localhost','--port',str(args.frontend_port),'--strictPort'],cwd=ROOT/'frontend/courses-front',env=env)
             time.sleep(1)
             if frontend.poll() is not None:raise SystemExit('Frontend не запустился. Проверь свободный порт и npm-зависимости.')
