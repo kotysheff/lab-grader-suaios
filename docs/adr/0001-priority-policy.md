@@ -1,7 +1,7 @@
 ---
 status: accepted
 date: 2026-11-06
-decision_owner: команда
+decision_owner: suaios
 ---
 
 [Главная](../../README.md) · [Навигация по документации](../README.md)
