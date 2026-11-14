@@ -46,15 +46,29 @@ def sync_queue(course_id, group_id, course, *, fetch_grid, parse_deadline, force
         lock = _LOCKS.setdefault(key, threading.Lock())
     with lock:
         cached = _CACHE.get(key)
-        if not force and cached and time.monotonic() - cached[0] < 15:
-            return store, cached[1]
-        # До чтения новых отметок сохраняется состав уже начавшихся занятий.
         now = int(time.time())
         with store.connection() as con:
-            started = con.execute("SELECT session_id FROM sessions WHERE course_id=? AND group_id=? AND starts_at<=? AND enrollment_status!='cancelled'", (course_id, group_id, now)).fetchall()
-        available = saved_deadlines_available(store, course_id, group_id)
+            active = con.execute("""SELECT session_id FROM sessions WHERE course_id=? AND group_id=?
+                AND starts_at<=? AND ends_at>? AND source_kind!='day'
+                AND enrollment_status!='cancelled'""", (course_id,group_id,now,now)).fetchall()
+        if active:
+            available = saved_deadlines_available(store, course_id, group_id)
+            for session in active:
+                queue_view(store,course_id,group_id,course,deadlines_available=available,now=now,session_id=session[0])
+            # During class, queue commands use SQLite; even force must not read Sheets.
+            with store.connection() as con:
+                saved = con.execute('SELECT summary_json FROM queue_sync_state WHERE course_id=? AND group_id=?', (course_id,group_id)).fetchone()
+                eligible = con.execute("SELECT count(*) FROM queue_candidates WHERE course_id=? AND group_id=? AND status='eligible'", (course_id,group_id)).fetchone()[0]
+            summary = json.loads(saved[0]) if saved else dict(deadlines_available=available,eligible=eligible,deadlines={},sheet_deadlines={},timezone=course_timezone(course))
+            return store, dict(summary,source_frozen=True,stale=False)
+        if not force and cached and time.monotonic() - cached[0] < 15:
+            return store, cached[1]
+        # Preserve completed class snapshots before the next external sync.
+        with store.connection() as con:
+            started = con.execute("SELECT session_id FROM sessions WHERE course_id=? AND group_id=? AND starts_at<=? AND enrollment_status!='cancelled'", (course_id,group_id,now)).fetchall()
+        available = saved_deadlines_available(store,course_id,group_id)
         for session in started:
-            queue_view(store, course_id, group_id, course, deadlines_available=available, now=now, session_id=session[0])
+            queue_view(store,course_id,group_id,course,deadlines_available=available,now=now,session_id=session[0])
         # Сеть вызывается вне транзакций SQLite.
         try:
             grid = fetch_grid()

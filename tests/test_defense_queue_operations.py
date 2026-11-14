@@ -295,15 +295,17 @@ class QueueRegressionTests(unittest.TestCase):
         self.assertEqual(row['attempt']['status'],'waiting')
         self.assertEqual(view['stats']['defended'],0)
 
-    def test_no_show_can_be_corrected_and_sheet_confirmation_protects_pass(self):
+    def test_no_show_and_pass_can_be_corrected_independently_of_sheet(self):
         self.view()
         eid=ops.call_next(self.store,'s',now=111,actor='admin')
         ops.record_result(self.store,eid,'no_show',now=112,actor='admin')
         ops.correct_result(self.store,eid,'defended',now=113,actor='admin')
         with self.store.transaction() as con:
             self.store.event(con,self.ids[0],'sheet_defended',114)
-        with self.assertRaisesRegex(ops.QueueConflict,'таблиц'):
-            ops.correct_result(self.store,eid,'failed',now=115,actor='admin')
+        ops.correct_result(self.store,eid,'failed',now=115,actor='admin')
+        with self.store.connection() as con:
+            self.assertEqual(con.execute('SELECT status FROM queue_entries WHERE entry_id=?',(eid,)).fetchone()[0],'failed')
+            self.assertEqual(con.execute("SELECT count(*) FROM queue_events WHERE kind='sheet_defended'").fetchone()[0],1)
 
     def test_move_cannot_use_past_or_present(self):
         for start in (99,100):

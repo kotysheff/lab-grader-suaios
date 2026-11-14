@@ -132,10 +132,6 @@ def undo(store, session_id, command_id, *, now, actor):
         before,after=json.loads(command['before_json']),json.loads(command['after_json'])
         current=_snapshot(con,session['course_id'],command['student_id'])
         if current['entries'] != after['entries']: raise QueueConflict('Запись уже изменена другим действием или сверкой')
-        for old in before['candidates']:
-            following=next((c for c in after['candidates'] if c['candidate_id']==old['candidate_id']),old)
-            if old['status'] != following['status'] and con.execute("SELECT 1 FROM queue_events WHERE candidate_id=? AND kind='sheet_defended'",(old['candidate_id'],)).fetchone():
-                raise QueueConflict('Защита уже подтверждена таблицей; сначала исправьте отметку в таблице')
         # Free active slots before restoring earlier active rows. Events remain append-only.
         con.execute("UPDATE queue_entries SET status='withdrawn',voided_at=?,closed_at=? WHERE course_id=? AND student_id=? AND entry_id NOT IN (SELECT value FROM json_each(?))",(now,now,session['course_id'],command['student_id'],json.dumps([r['entry_id'] for r in before['entries']])))
         for old in before['entries']:

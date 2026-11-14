@@ -397,8 +397,6 @@ def correct_result(store, entry_id, outcome, *, now, actor):
             return
         if con.execute("SELECT 1 FROM queue_entries WHERE course_id=? AND student_id=? AND entry_id>? AND (called_at IS NOT NULL OR status IN ('defended','failed','no_show'))", (row['course_id'],row['student_id'],entry_id)).fetchone():
             raise QueueConflict('Уже началась следующая попытка. Сначала исправьте её результат.')
-        if row['status'] == 'defended' and con.execute("SELECT 1 FROM queue_events WHERE candidate_id=? AND kind='sheet_defended'", (row['candidate_id'],)).fetchone():
-            raise QueueConflict('Защита подтверждена Google-таблицей. Сначала исправьте отметку в таблице.')
         pending = con.execute("SELECT entry_id,candidate_id,session_id FROM queue_entries WHERE course_id=? AND student_id=? AND entry_id>? AND status='waiting'", (row['course_id'],row['student_id'],entry_id)).fetchall()
         for child in pending:
             con.execute("UPDATE queue_entries SET status='withdrawn',closed_at=?,version=version+1 WHERE entry_id=?", (now,child['entry_id']))

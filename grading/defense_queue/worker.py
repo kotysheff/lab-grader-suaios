@@ -85,7 +85,8 @@ class QueueWorker:
                         teacher_view(self.store,course_id,group_id,course,deadlines_available=available,now=now,session_id=session['session_id'])
                         def sync():
                             _, summary = self.sync(course_id,group_id,original,force=True)
-                            if summary.get('stale'): raise RuntimeError('Таблица временно недоступна')
+                            if summary.get('stale') or summary.get('source_frozen'):
+                                raise RuntimeError('Сверка отложена: таблица недоступна или в группе идёт занятие')
                         reconcile(self.store,session['session_id'],now=now,sync=sync)
                     # Подхват новых допусков даже без открытой страницы.
                     self.sync(course_id,group_id,original)
