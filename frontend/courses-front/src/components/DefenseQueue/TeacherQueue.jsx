@@ -140,7 +140,7 @@ export function TeacherQueue({
       {sessionId && !data && !roster.error && <p role="status">{q("Загружается очередь…")}</p>}
       {data && <>
         <div className="queue-session-heading"><h2>{displayDate(data.session.starts_at, data.session.timezone)} <span className="queue-group-badge">{data.session.group_id}</span></h2>
-        <p>{data.mode === "random" ? q("Случайный порядок") : q("Приоритет по дедлайнам, от −1")}. {data.attendance_open ? q("Участие можно подтвердить или отменить до начала занятия.") : q("Состав зафиксирован; изменения доступны преподавателю.")}</p></div>
+        <p>{data.mode === "fifo" ? q("FIFO — по времени записи") : data.mode === "random" ? q("Случайный порядок") : q("Приоритет по дедлайнам, от −1")}. {data.attendance_open ? q(data.continuous_enrollment ? "Участие можно подтвердить или отменить до конца занятия." : "Участие можно подтвердить или отменить до начала занятия.") : q("Состав зафиксирован; изменения доступны преподавателю.")}</p></div>
         {data.stale && <p className="queue-notice">{q("Таблица недоступна. Показан сохранённый состав, обновление допуска ожидается.")}</p>}
         {Date.now() / 1000 < data.session.starts_at && data.session.enrollment_status !== "cancelled" && <button disabled={busy} onClick={() => action({
             action: data.session.enrollment_status === "closed" ? "open_enrollment" : "close_enrollment"
@@ -178,6 +178,8 @@ function Settings({
   const modeLocked = modeState.data?.mode_locked;
   const [config, setConfig] = useState(null),
     [random, setRandom] = useState(false),
+    [fifo, setFifo] = useState(false),
+    [opensBeforeMinutes, setOpensBeforeMinutes] = useState(15),
     [deadlines, setDeadlines] = useState({}),
     [error, setError] = useState("");
   useEffect(() => {
@@ -186,6 +188,8 @@ function Settings({
       if (alive) {
         setConfig(data);
         setRandom(Boolean(data.queue.random));
+        setFifo(Boolean(data.queue.fifo));
+        setOpensBeforeMinutes(data.queue.opens_before_minutes ?? 15);
         setDeadlines(data.queue.deadlines || {});
       }
     }).catch(err => setError(err));
@@ -208,14 +212,20 @@ function Settings({
       method: "PUT",
       body: {
         random,
+        fifo,
+        opens_before_minutes: opensBeforeMinutes,
         deadlines
       }
     }).then(() => modeState.refresh()));
   }}>
     <h2>{q("Дедлайны и порядок")}</h2>
     {modeState.error && <p role="alert">{queueError(modeState.error)}</p>}
-    <label className="queue-checkbox"><input type="checkbox" checked={modeLocked ? true : random} disabled={modeLocked || modeLocked == null || busy} onChange={e => setRandom(e.target.checked)} /><Hint text="Без читаемых дедлайнов включён случайный порядок. При доступных дедлайнах работает очередь от −1; случайный порядок можно выбрать вручную.">{q("Случайный порядок")}</Hint></label>
-    {modeLocked && <p className="queue-notice">{q("Есть непрочитанный дедлайн без ручного значения: случайный режим обязателен. После восстановления данных автоматически включится приоритет, если случайный режим не выбран вручную.")}</p>}
+    <div className="queue-actions">
+    <label className="queue-checkbox"><input type="checkbox" checked={!fifo && (modeLocked ? true : random)} disabled={(!fifo && modeLocked) || modeLocked == null || busy} onChange={e => { setRandom(e.target.checked); if (e.target.checked) setFifo(false); }} /><Hint text="Без читаемых дедлайнов включён случайный порядок. При доступных дедлайнах работает очередь от −1; случайный порядок можно выбрать вручную.">{q("Случайный порядок")}</Hint></label>
+    <label className="queue-checkbox"><input type="checkbox" checked={fifo} disabled={busy} onChange={e => { setFifo(e.target.checked); if (e.target.checked) setRandom(false); }} /><Hint text="Первым вызывается тот, кто раньше подтвердил приход. Запись открывается перед парой и продолжается до её конца.">{q("FIFO — по времени записи")}</Hint></label>
+    </div>
+    {fifo && <label>{q("Открывать запись за, минут")}<input type="number" min="0" max="1440" step="1" required value={opensBeforeMinutes} disabled={busy} onChange={e => setOpensBeforeMinutes(e.target.value === "" ? "" : Number(e.target.value))} /></label>}
+    {modeLocked && !fifo && <p className="queue-notice">{q("Есть непрочитанный дедлайн без ручного значения: случайный режим обязателен. После восстановления данных автоматически включится приоритет, если случайный режим не выбран вручную.")}</p>}
     <p>{q("«Без дедлайна» означает отсутствие срока по правилам работы. «Из таблицы» требует читаемую дату; пустая ячейка не считается отсутствием срока.")}</p>
     <div className="queue-settings">{config.labs.map(lab => <fieldset key={lab.key}><legend>{lab.title}</legend>
       <label>{q("Источник")}<select value={!(lab.key in deadlines) ? "sheet" : deadlines[lab.key] === null ? "none" : "manual"} onChange={e => patch(lab.key, e.target.value === "none" ? null : "", e.target.value === "sheet")}><option value="sheet">{q("Из таблицы")}</option><option value="none">{q("Без дедлайна")}</option><option value="manual">{q("Вручную")}</option></select></label>

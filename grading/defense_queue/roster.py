@@ -43,7 +43,7 @@ def ordering_rows(store, session, *, now, mode):
         initialize_session(con, session['session_id'], now=now)
         result = []
         for member in members:
-            if mode == 'priority' and member['completed']:
+            if mode in ('priority','fifo') and member['completed']:
                 continue
             ordering = con.execute('SELECT * FROM session_roster WHERE session_id=? AND student_id=?',
                                    (session['session_id'], member['student_id'])).fetchone()

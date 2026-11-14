@@ -1513,7 +1513,7 @@ def get_queue_settings(request: Request, course_id: str, group_id: str | None = 
         store, course, summary = _queue_admin_context(course_id, group_id)
         from grading.defense_queue.rounds import preferences
         from grading.defense_queue.policy import resolve_mode
-        mode = resolve_mode(deadlines_available=summary['deadlines_available'], random_override=course.get('queue', {}).get('random', False)) if summary else None
+        mode = resolve_mode(deadlines_available=summary['deadlines_available'], random_override=course.get('queue', {}).get('random', False), fifo=course.get('queue', {}).get('fifo', False)) if summary else None
         return {'mode_locked': mode.locked if mode else None, 'mode': mode.name if mode else None,
                 'preferences': preferences(store,course_id),
                 'sheet_deadlines': summary.get('sheet_deadlines', {}) if summary else {},
@@ -1548,6 +1548,8 @@ def set_queue_preferences(request: Request, course_id: str, data: QueuePreferenc
 
 class QueueSettingsRequest(BaseModel):
     random: bool = False
+    fifo: bool = False
+    opens_before_minutes: int = Field(default=15, ge=0, le=1440, strict=True)
     deadlines: dict[str, str | None] = Field(default_factory=dict)
 
 
@@ -1570,7 +1572,7 @@ def set_queue_settings(request: Request, course_id: str, data: QueueSettingsRequ
         with store.transaction() as con:
             con.execute('''INSERT INTO courses(course_id,title,timezone,schedule_source) VALUES (?,?,?,'manual')
                            ON CONFLICT(course_id) DO NOTHING''', (course_id, course.get('name', course_id), course_timezone(course)))
-        save_settings(store, course_id, random=data.random, deadlines=data.deadlines, now=int(time.time()))
+        save_settings(store, course_id, random=data.random, fifo=data.fifo, opens_before_minutes=data.opens_before_minutes, deadlines=data.deadlines, now=int(time.time()))
         return {'status': 'updated'}
     except Exception as error:
         _queue_error(error)

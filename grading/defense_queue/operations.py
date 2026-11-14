@@ -23,18 +23,26 @@ def effective_course(store, course_id, course):
         if settings['policy_override_set']:
             result['queue']['random'] = bool(settings['random_override'])
             result['queue']['deadlines'] = json.loads(settings['deadlines_json'])
+        result['queue']['fifo'] = bool(settings['fifo'])
+        result['queue']['opens_before_minutes'] = settings['opens_before_minutes']
         result['queue']['schedule'] = dict(result['queue'].get('schedule', {}), **json.loads(settings['schedule_json']))
     return result
 
 
-def save_settings(store, course_id, *, random, deadlines, now):
+def save_settings(store, course_id, *, random, deadlines, now, fifo=False, opens_before_minutes=15):
     if type(random) is not bool or not isinstance(deadlines, dict):
         raise ValueError('Нужны режим очереди и словарь дедлайнов')
+    if type(fifo) is not bool or fifo and random or type(opens_before_minutes) is not int or not 0 <= opens_before_minutes <= 1440:
+        raise ValueError('Выберите один режим и окно записи от 0 до 1440 минут')
     with store.transaction() as con:
         con.execute('''INSERT INTO queue_settings(course_id,random_override,deadlines_json,updated_at,policy_override_set)
             VALUES (?,?,?,?,1) ON CONFLICT(course_id) DO UPDATE SET
             random_override=excluded.random_override,deadlines_json=excluded.deadlines_json,updated_at=excluded.updated_at,policy_override_set=1''',
             (course_id, int(random), json.dumps(deadlines), now))
+
+        con.execute('UPDATE queue_settings SET fifo=?,opens_before_minutes=? WHERE course_id=?', (int(fifo),opens_before_minutes,course_id))
+        for session in con.execute("SELECT session_id,starts_at FROM sessions WHERE course_id=? AND starts_at>? AND enrollment_mode!='daily'", (course_id,now)).fetchall():
+            con.execute('UPDATE sessions SET enrollment_mode=?,opens_at=? WHERE session_id=?', ('fifo' if fifo else 'legacy',session['starts_at']-opens_before_minutes*60 if fifo else min(now,session['starts_at']),session['session_id']))
 
 
 def _insert_attempt(con, candidate, session, *, request_key, repeat, now, rank=None, snapshot=None):
@@ -124,7 +132,7 @@ def teacher_view(store, course_id, group_id, course, *, deadlines_available, now
                 continue
             current[key] = dict(base, candidate_id=candidate['candidate_id'], full_name=candidate['full_name'],
                 student_id=key, github=candidate['github_login'], lab_key=candidate['lab_key'], qualified_at=candidate['qualified_at'],
-                deadline_at=candidate['deadline_at'], priority=None if view['mode'] == 'random' or candidate['deadline_at'] is None else priority_for(
+                deadline_at=candidate['deadline_at'], priority=None if view['mode'] in ('random','fifo') or candidate['deadline_at'] is None else priority_for(
                     datetime.fromtimestamp(candidate['deadline_at'], timezone.utc),
                     datetime.fromtimestamp(min(now, view['session']['starts_at']), timezone.utc),
                     week_anchor=date.fromisoformat(course.get('queue', {}).get('semester_week_anchor', '1970-01-05')),

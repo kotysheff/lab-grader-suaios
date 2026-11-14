@@ -207,7 +207,7 @@ CREATE TABLE queue_settings (
     random_override INTEGER NOT NULL DEFAULT 0 CHECK(random_override IN (0,1)),
     deadlines_json TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(deadlines_json)),
     updated_at INTEGER NOT NULL
-, schedule_json TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(schedule_json)), policy_override_set INTEGER NOT NULL DEFAULT 0 CHECK(policy_override_set IN (0,1)), auto_repeat INTEGER NOT NULL DEFAULT 1 CHECK(auto_repeat IN (0,1)), undo_seconds INTEGER NOT NULL DEFAULT 5 CHECK(undo_seconds BETWEEN 1 AND 10));
+, schedule_json TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(schedule_json)), policy_override_set INTEGER NOT NULL DEFAULT 0 CHECK(policy_override_set IN (0,1)), auto_repeat INTEGER NOT NULL DEFAULT 1 CHECK(auto_repeat IN (0,1)), undo_seconds INTEGER NOT NULL DEFAULT 5 CHECK(undo_seconds BETWEEN 1 AND 10), fifo INTEGER NOT NULL DEFAULT 0 CHECK(fifo IN (0,1)), opens_before_minutes INTEGER NOT NULL DEFAULT 15 CHECK(opens_before_minutes BETWEEN 0 AND 1440));
 
 CREATE TABLE queue_reconciliations (
     session_id TEXT PRIMARY KEY REFERENCES sessions(session_id),

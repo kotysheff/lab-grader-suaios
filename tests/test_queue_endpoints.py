@@ -362,3 +362,24 @@ def test_next_attendance_blocked_until_end_plus_ten_minutes(queue_client,monkeyp
     assert not view['read_only'] and view['attendance_open']
     assert view['session']['session_id']=='future'
     assert client.post(public+'/attendance',json=identity).status_code==200
+
+
+def test_review_fifo_settings_window_and_running_signup(queue_client):
+    client, store, course, now = queue_client
+    authenticate(client)
+    settings = '/admin/courses/c/queue/settings'
+    response = client.put(settings, json={'fifo': True, 'random': False, 'opens_before_minutes': 15})
+    assert response.status_code == 200, response.text
+    assert client.get(settings + '?group_id=g').json()['mode'] == 'fifo'
+    body = {'surname': 'Фамилия', 'name': 'Имя', 'patronymic': 'Отчество', 'github': 'login', 'session_id': 'future', 'will_attend': True}
+    path = '/courses/c/groups/g/queue'
+    assert not client.get(path).json()['attendance_open']
+    assert client.post(path + '/attendance', json=body).status_code == 409
+    store.create_session('running-fifo', 'c', 'g', 'teacher', starts_at=now-600, ends_at=now+600, local_date='2026-11-14', now=now-700)
+    body['session_id'] = 'running-fifo'
+    assert client.post(path + '/attendance', json=body).status_code == 200
+    public = client.get(path).json()
+    assert public['attendance_open']
+    assert not {'history', 'student_catalog', 'available_candidates', 'attempts'} & public.keys()
+    assert client.put(settings, json={'fifo': True, 'random': True}).status_code == 422
+    assert client.put(settings, json={'fifo': True, 'opens_before_minutes': -1}).status_code == 422

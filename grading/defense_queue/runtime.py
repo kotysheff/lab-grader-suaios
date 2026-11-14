@@ -103,8 +103,14 @@ def queue_view(store, course_id, group_id, course, *, deadlines_available, now, 
                                   (session_id, course_id, group_id)).fetchone()
         else:
             session = con.execute("""SELECT * FROM sessions WHERE course_id=? AND group_id=?
-                AND (starts_at>? OR (enrollment_mode!='legacy' AND ends_at>?)) AND enrollment_status NOT IN ('cancelled','closed')
-                ORDER BY starts_at,session_id LIMIT 1""", (course_id, group_id, now, now)).fetchone()
+                AND (starts_at>? OR ((enrollment_mode!='legacy' OR ?) AND ends_at>?)) AND enrollment_status NOT IN ('cancelled','closed')
+                ORDER BY starts_at,session_id LIMIT 1""", (course_id, group_id, now, int(course.get('queue', {}).get('fifo', False)), now)).fetchone()
+    if session is not None and session['enrollment_mode'] != 'daily' and now < session['ends_at']:
+        fifo = course.get('queue', {}).get('fifo', False)
+        with store.transaction() as con:
+            con.execute('UPDATE sessions SET enrollment_mode=?,opens_at=? WHERE session_id=?',
+                        ('fifo' if fifo else 'legacy', session['starts_at'] - course.get('queue', {}).get('opens_before_minutes', 15)*60 if fifo else session['opens_at'], session['session_id']))
+            session = con.execute('SELECT * FROM sessions WHERE session_id=?', (session['session_id'],)).fetchone()
     continuous = session is not None and session['enrollment_mode'] != 'legacy'
     if session is not None and not continuous and now >= session['starts_at']:
         with store.connection() as con:
@@ -114,7 +120,8 @@ def queue_view(store, course_id, group_id, course, *, deadlines_available, now, 
             result['session'] = dict(session)
             return result
     mode = resolve_mode(deadlines_available=deadlines_available,
-                        random_override=course.get('queue', {}).get('random', False))
+                        random_override=course.get('queue', {}).get('random', False),
+                        fifo=course.get('queue', {}).get('fifo', False))
     if session is None:
         with store.connection() as con:
             pending = con.execute('''SELECT c.candidate_id,c.lab_key,c.qualified_at,s.full_name,s.github_login
@@ -150,9 +157,14 @@ def queue_view(store, course_id, group_id, course, *, deadlines_available, now, 
     if not continuous and now >= session['starts_at']:
         rows = [row for row in rows if row['frozen_at'] is not None]
     rows = [dict(row) for row in rows]
+    if mode.name == 'fifo':
+        with store.connection() as con:
+            for row in rows:
+                event = con.execute("SELECT max(event_id) FROM queue_events WHERE session_id=? AND candidate_id=? AND kind='attending'", (session['session_id'],row['candidate_id'])).fetchone()[0]
+                row['signup_order'] = event if row['will_attend'] and event is not None else float('inf')
     zone = course_timezone(course)
     anchor = date.fromisoformat(course.get('queue', {}).get('semester_week_anchor', '1970-01-05'))
-    candidates = [CandidateOrder(row['candidate_id'], row.get('order_at', row['qualified_at']),
+    candidates = [CandidateOrder(row['candidate_id'], row['signup_order'] if mode.name == 'fifo' else row.get('order_at', row['qualified_at']),
                   datetime.fromtimestamp(row['deadline_at'], tz=timezone.utc) if row['deadline_at'] is not None else None,
                   row['random_key'], deadline_available=bool(row['deadline_available'])) for row in rows]
     ordered = order_candidates(candidates, mode=mode, session_start=datetime.fromtimestamp(min(now, session['starts_at']), tz=timezone.utc),
@@ -168,7 +180,7 @@ def queue_view(store, course_id, group_id, course, *, deadlines_available, now, 
                         'virtual_priority': row.get('virtual_priority', False), 'roster_order': len(entries),
                         'candidate_id': row['candidate_id'], 'full_name': row['full_name'],
                         'github': row['github_login'], 'lab_key': row['lab_key'],
-                        'qualified_at': row['qualified_at'], 'deadline_at': row['deadline_at'], 'deadline_available': bool(row['deadline_available']), 'priority': None if mode.name == 'random' or candidate.deadline is None else priority_for(candidate.deadline, datetime.fromtimestamp(min(now, session['starts_at']), timezone.utc), week_anchor=anchor, timezone=zone), 'will_attend': bool(row['will_attend']),
+                        'qualified_at': row['qualified_at'], 'deadline_at': row['deadline_at'], 'deadline_available': bool(row['deadline_available']), 'priority': None if mode.name in ('random','fifo') or candidate.deadline is None else priority_for(candidate.deadline, datetime.fromtimestamp(min(now, session['starts_at']), timezone.utc), week_anchor=anchor, timezone=zone), 'will_attend': bool(row['will_attend']),
                         'answered': bool(row['attendance_answered']),
                         'attendance_at': row['attendance_at'] if row['attendance_answered'] else None,
                         'position': position if row['will_attend'] else None,

@@ -265,5 +265,16 @@
   "Запись на следующее занятие откроется через 10 минут после окончания текущего": "Enrollment for the next class opens ten minutes after the current class ends",
   "GitHub не указан": "GitHub not specified",
   "Место предварительное. Подтвердить приход можно после успешной проверки работы.": "This place is provisional. Attendance can be confirmed after the lab passes its checks.",
-  "Предварительная позиция": "Provisional position"
+  "Предварительная позиция": "Provisional position",
+  "Предварительная очередь": "Provisional queue",
+  "FIFO — по времени записи": "FIFO — signup order",
+  "Открывать запись за, минут": "Open enrollment before class, minutes",
+  "Первым вызывается тот, кто раньше подтвердил приход. Запись открывается перед парой и продолжается до её конца.": "Students are called in signup order. Enrollment opens before class and stays open until it ends.",
+  "По умолчанию участие не подтверждено. «Да» включает в список сдающих. Время изменения посещения определяется режимом очереди. «Нет» сохраняет допуск к работе, но исключает из вызова на это занятие.": "Attendance is unconfirmed by default. Yes joins the queue; the queue mode determines when you can change your answer. No keeps your eligibility but excludes you from this class queue.",
+  "Запись сейчас закрыта.": "Enrollment is currently closed.",
+  "Время открытия:": "Enrollment opens:",
+  "Участие можно подтвердить или отменить до конца занятия.": "You can confirm or cancel attendance until the end of class.",
+  "Приход подтверждён. Ответ можно изменить до конца занятия.": "Attendance confirmed. You can change your answer until class ends.",
+  "Вы отметили, что не придёте. Ответ можно изменить до конца занятия.": "You declined attendance. You can change your answer until class ends.",
+  "Запись доступна в указанное окно до конца занятия. Для возвращения к списку новая проверка не требуется.": "Enrollment is available within the stated window until class ends. No new lab check is required to return to the queue."
 }

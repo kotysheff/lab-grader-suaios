@@ -7,11 +7,13 @@ from zoneinfo import ZoneInfo
 
 @dataclass(frozen=True)
 class QueueMode:
-    name: Literal["random", "priority"]
+    name: Literal["random", "priority", "fifo"]
     locked: bool
 
 
-def resolve_mode(*, deadlines_available: bool, random_override: bool = False) -> QueueMode:
+def resolve_mode(*, deadlines_available: bool, random_override: bool = False, fifo: bool = False) -> QueueMode:
+    if fifo:
+        return QueueMode("fifo", locked=False)
     if not deadlines_available:
         return QueueMode("random", locked=True)
     return QueueMode("random" if random_override else "priority", locked=False)
@@ -41,7 +43,7 @@ def order_candidates(candidates: list[CandidateOrder], *, mode: QueueMode,
                      session_start: datetime, week_anchor: date,
                      timezone: str) -> list[CandidateOrder]:
     """random_key создаётся один раз при включении в состав и хранится в БД."""
-    if mode.name not in ("random", "priority"):
+    if mode.name not in ("random", "priority", "fifo"):
         raise ValueError("Неизвестный режим очереди")
     if len({c.candidate_id for c in candidates}) != len(candidates):
         raise ValueError("Участник повторяется в составе")
@@ -49,7 +51,9 @@ def order_candidates(candidates: list[CandidateOrder], *, mode: QueueMode,
     def key(candidate: CandidateOrder):
         if candidate.repeat_order is not None:
             return (1, candidate.repeat_order, candidate.qualified_at, candidate.candidate_id)
-        if mode.name == "random":
+        if mode.name == "fifo":
+            rank = candidate.qualified_at
+        elif mode.name == "random":
             if not 0 <= candidate.random_key < 1:
                 raise ValueError("Случайный ключ должен находиться в диапазоне [0, 1)")
             rank = candidate.random_key
