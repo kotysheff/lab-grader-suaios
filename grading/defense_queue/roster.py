@@ -51,7 +51,7 @@ def ordering_rows(store, session, *, now, mode):
                 WHERE course_id=? AND group_id=? AND student_id=? AND status='eligible' ''',
                 (session['course_id'], session['group_id'], member['student_id'])).fetchone()
             admitted = candidate is not None and candidate['lab_key'] == member['admitted_lab_key']
-            if admitted and now >= session['starts_at'] and candidate['qualified_at'] > session['starts_at']:
+            if admitted and session['enrollment_mode'] == 'legacy' and now >= session['starts_at'] and candidate['qualified_at'] > session['starts_at']:
                 admitted = False
             participation = con.execute('''SELECT * FROM session_participation
                 WHERE session_id=? AND student_id=? AND attendance_answered=1

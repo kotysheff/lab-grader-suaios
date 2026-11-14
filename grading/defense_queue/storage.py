@@ -41,10 +41,10 @@ class QueueStore:
             con.execute("BEGIN IMMEDIATE")
             try:
                 version = con.execute("PRAGMA user_version").fetchone()[0]
-                if version > 8:
+                if version > 9:
                     raise ValueError("Версия базы очереди новее поддерживаемой")
                 migrations = Path(__file__).with_name("migrations")
-                for target in range(version + 1, 9):
+                for target in range(version + 1, 10):
                     path = next(migrations.glob(f"{target:03d}_*.sql"))
                     statement = ""
                     for line in path.read_text().splitlines(keepends=True):
@@ -150,10 +150,20 @@ class QueueStore:
             candidate = con.execute("SELECT * FROM queue_candidates WHERE candidate_id=? AND status='eligible'", (candidate_id,)).fetchone()
             if session is None or candidate is None:
                 raise ValueError("Занятие или участник не найден")
-            if now >= session['starts_at'] or session['enrollment_status'] in ('closed', 'cancelled'):
+            continuous = session['enrollment_mode'] != 'legacy'
+            if (now >= (session['ends_at'] if continuous else session['starts_at'])
+                    or continuous and now < session['opens_at']
+                    or session['enrollment_status'] in ('closed', 'cancelled')):
                 raise QueueClosed("Состав текущего занятия уже закрыт")
             if (candidate['course_id'], candidate['group_id']) != (session['course_id'], session['group_id']):
                 raise ValueError("Участник не относится к группе занятия")
+            if continuous and not will_attend:
+                attempts = con.execute("SELECT entry_id,status FROM queue_entries WHERE session_id=? AND candidate_id=? AND status IN ('waiting','called')", (session_id,candidate_id)).fetchall()
+                if any(row['status'] == 'called' for row in attempts):
+                    raise QueueConflict('Вы уже вызваны: обратитесь к преподавателю')
+                for row in attempts:
+                    con.execute("UPDATE queue_entries SET status='withdrawn',closed_at=?,version=version+1 WHERE entry_id=?", (now,row['entry_id']))
+                    self.event(con,candidate_id,'withdrawn',now,session_id=session_id,actor='student',actor_key=str(candidate['student_id']))
             old = con.execute("SELECT * FROM session_participation WHERE session_id=? AND candidate_id=?", (session_id, candidate_id)).fetchone()
             if old and old['attendance_answered'] and bool(old['will_attend']) == will_attend:
                 return

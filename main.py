@@ -1303,8 +1303,11 @@ def set_queue_attendance(request: Request, course_id: str, group_id: str, data: 
         store, summary = _sync_defense_queue(course_id, group_id, course)
         if summary.get('stale'):
             raise HTTPException(status_code=503, detail='Допуск не удалось обновить. Повторите позже')
+        from grading.defense_queue.runtime import queue_view
+        queue_view(store, course_id, group_id, course, deadlines_available=summary['deadlines_available'], now=int(time.time()), session_id=data.session_id)
         from grading.defense_queue.student_view import current_session
-        if current_session(store,course_id,group_id,now=int(time.time())):
+        current = current_session(store,course_id,group_id,now=int(time.time()))
+        if current and (current['session_id'] != data.session_id or current['enrollment_mode'] == 'legacy'):
             raise HTTPException(status_code=409,detail='Запись на следующее занятие откроется через 10 минут после окончания текущего')
         full_name = f'{data.surname} {data.name} {data.patronymic}'.strip()
         with store.connection() as con:

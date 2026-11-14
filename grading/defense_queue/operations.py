@@ -65,7 +65,10 @@ def materialize(store, view, course, *, now):
                 continue
             candidate = con.execute('SELECT * FROM queue_candidates WHERE candidate_id=?', (row['candidate_id'],)).fetchone()
             initial_key = f"initial:{session['session_id']}:{session['schedule_revision']}:{row['candidate_id']}"
-            if con.execute("SELECT 1 FROM queue_entries WHERE candidate_id=? AND session_id=? AND (status!='expired' OR request_key=?)", (candidate['candidate_id'], session['session_id'], initial_key)).fetchone():
+            if session.get('enrollment_mode') != 'legacy':
+                signup = con.execute("SELECT max(event_id) FROM queue_events WHERE session_id=? AND candidate_id=? AND kind='attending'", (session['session_id'],row['candidate_id'])).fetchone()[0]
+                initial_key += f":{signup}"
+            if con.execute("SELECT 1 FROM queue_entries WHERE candidate_id=? AND session_id=? AND (status NOT IN ('expired','withdrawn') OR request_key=?)", (candidate['candidate_id'], session['session_id'], initial_key)).fetchone():
                 continue
             if con.execute("SELECT 1 FROM queue_entries WHERE course_id=? AND student_id=? AND session_id!=? AND status IN ('waiting','called')", (session['course_id'], candidate['student_id'], session['session_id'])).fetchone():
                 continue

@@ -1,5 +1,7 @@
 """Подключение очереди к приложению; Sheets-клиент передаёт main.py."""
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
+import hashlib
 from functools import lru_cache
 import os
 import json
@@ -72,18 +74,39 @@ def sync_queue(course_id, group_id, course, *, fetch_grid, parse_deadline, force
         return store, result
 
 
+def ensure_daily_session(store, course_id, group_id, course, *, now):
+    if not course.get('queue', {}).get('enabled') or course.get('queue', {}).get('schedule'):
+        return
+    zone = ZoneInfo(course_timezone(course))
+    day = datetime.fromtimestamp(now, zone).date()
+    start = datetime.combine(day, datetime.min.time(), zone)
+    end = datetime.combine(day + timedelta(days=1), datetime.min.time(), zone)
+    digest = hashlib.sha256(f'{course_id}\0{group_id}'.encode()).hexdigest()[:24]
+    session_id = f'daily:{digest}:{day}'
+    with store.transaction() as con:
+        if con.execute("SELECT 1 FROM sessions WHERE course_id=? AND group_id=? AND ends_at>? AND enrollment_mode!='daily'", (course_id,group_id,now)).fetchone():
+            return
+        if con.execute('SELECT 1 FROM sessions WHERE session_id=?', (session_id,)).fetchone():
+            return
+        store.create_session(session_id, course_id, group_id, 'daily', starts_at=int(start.timestamp()), ends_at=int(end.timestamp()), local_date=str(day), now=now)
+        con.execute("UPDATE sessions SET enrollment_mode='daily',source_kind='day',opens_at=starts_at WHERE session_id=?", (session_id,))
+
+
 def queue_view(store, course_id, group_id, course, *, deadlines_available, now, session_id=None):
     from .operations import effective_course
     course = effective_course(store, course_id, course)
+    if session_id is None:
+        ensure_daily_session(store, course_id, group_id, course, now=now)
     with store.connection() as con:
         if session_id:
             session = con.execute('SELECT * FROM sessions WHERE session_id=? AND course_id=? AND group_id=?',
                                   (session_id, course_id, group_id)).fetchone()
         else:
             session = con.execute("""SELECT * FROM sessions WHERE course_id=? AND group_id=?
-                AND starts_at>? AND enrollment_status NOT IN ('cancelled','closed')
-                ORDER BY starts_at,session_id LIMIT 1""", (course_id, group_id, now)).fetchone()
-    if session is not None and now >= session['starts_at']:
+                AND (starts_at>? OR (enrollment_mode!='legacy' AND ends_at>?)) AND enrollment_status NOT IN ('cancelled','closed')
+                ORDER BY starts_at,session_id LIMIT 1""", (course_id, group_id, now, now)).fetchone()
+    continuous = session is not None and session['enrollment_mode'] != 'legacy'
+    if session is not None and not continuous and now >= session['starts_at']:
         with store.connection() as con:
             frozen = con.execute("SELECT details_json FROM queue_events WHERE session_id=? AND kind='roster_frozen' AND json_extract(details_json,'$.session.schedule_revision')=? ORDER BY event_id LIMIT 1", (session['session_id'], session['schedule_revision'])).fetchone()
         if frozen:
@@ -107,7 +130,7 @@ def queue_view(store, course_id, group_id, course, *, deadlines_available, now, 
     # Ключи создаются один раз, включая ещё не ответивших участников.
     with store.transaction() as con:
         candidates = con.execute("SELECT * FROM queue_candidates WHERE course_id=? AND group_id=? AND status='eligible' AND qualified_at<=?",
-                                 (course_id, group_id, now if now < session['starts_at'] else session['starts_at'])).fetchall()
+                                 (course_id, group_id, now if continuous or now < session['starts_at'] else session['starts_at'])).fetchall()
         for candidate in candidates:
             previous = con.execute("""SELECT will_attend,attendance_answered,updated_at FROM session_participation
                 WHERE session_id=? AND student_id=? AND attendance_answered=1
@@ -117,14 +140,14 @@ def queue_view(store, course_id, group_id, course, *, deadlines_available, now, 
                 ON CONFLICT(session_id,candidate_id) DO NOTHING""", (session['session_id'], candidate['candidate_id'],
                 course_id, group_id, candidate['student_id'], session['teacher_key'], secrets.SystemRandom().random(), previous['updated_at'] if previous else now,
                 previous['will_attend'] if previous else 0, previous['attendance_answered'] if previous else 0))
-        if now >= session['starts_at']:
+        if not continuous and now >= session['starts_at']:
             con.execute('UPDATE session_participation SET frozen_at=? WHERE session_id=? AND frozen_at IS NULL',
                         (session['starts_at'], session['session_id']))
     from .roster import ordering_rows
     rows = ordering_rows(store, session, now=now, mode=mode.name)
     if rows is None:
         rows = store.roster(session['session_id'])
-    if now >= session['starts_at']:
+    if not continuous and now >= session['starts_at']:
         rows = [row for row in rows if row['frozen_at'] is not None]
     rows = [dict(row) for row in rows]
     zone = course_timezone(course)
@@ -151,8 +174,9 @@ def queue_view(store, course_id, group_id, course, *, deadlines_available, now, 
                         'position': position if row['will_attend'] else None,
                         'state': 'attending' if row['will_attend'] else 'declined' if row['attendance_answered'] else 'unconfirmed'})
     result = {'session': dict(session), 'mode': mode.name, 'mode_locked': mode.locked,
-              'entries': entries, 'attendance_open': now < session['starts_at'] and session['enrollment_status'] not in ('closed', 'cancelled')}
-    if now >= session['starts_at']:
+              'entries': entries, 'attendance_open': (session['opens_at'] <= now < session['ends_at'] if continuous else now < session['starts_at']) and session['enrollment_status'] not in ('closed', 'cancelled'),
+              'enrollment_opens_at': session['opens_at'], 'continuous_enrollment': continuous}
+    if not continuous and now >= session['starts_at']:
         with store.transaction() as con:
             frozen = con.execute("SELECT details_json FROM queue_events WHERE session_id=? AND kind='roster_frozen' AND json_extract(details_json,'$.session.schedule_revision')=? ORDER BY event_id LIMIT 1", (session['session_id'], session['schedule_revision'])).fetchone()
             if frozen:

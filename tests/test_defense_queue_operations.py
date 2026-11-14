@@ -64,13 +64,16 @@ class OperationsTests(unittest.TestCase):
             con.execute('ALTER TABLE queue_settings DROP COLUMN undo_seconds')
             con.execute('DROP TABLE session_roster')
             con.execute('DROP TABLE queue_members')
+            con.execute('DROP TRIGGER frozen_participation')
+            con.execute('ALTER TABLE sessions DROP COLUMN enrollment_mode')
+            con.execute("CREATE TRIGGER frozen_participation BEFORE UPDATE ON session_participation WHEN OLD.frozen_at IS NOT NULL AND NEW.will_attend != OLD.will_attend BEGIN SELECT RAISE(ABORT, 'attendance is frozen for this session'); END")
             con.execute('PRAGMA user_version=4')
         self.store = Store(self.store.path)
         second = ops.call_next(self.store, 's', now=112, actor='admin', request_id='second')
         self.assertEqual(ops.call_next(self.store, 's', now=113, actor='admin', request_id='second'), second)
         self.assertEqual(self.view()['current_entry_ids'], [first, second])
         with self.store.connection() as con:
-            self.assertEqual(con.execute('PRAGMA user_version').fetchone()[0], 8)
+            self.assertEqual(con.execute('PRAGMA user_version').fetchone()[0], 9)
 
     def test_parallel_distinct_calls_never_call_same_student_twice(self):
         from concurrent.futures import ThreadPoolExecutor
